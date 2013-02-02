@@ -1,0 +1,12 @@
+{application, erlang_cep,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { erlang_cep_app, []}},
+  {env, []}
+ ]}.
