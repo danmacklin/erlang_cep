@@ -1,20 +1,14 @@
-===========================================
-erlang_cep v0.1 Beta 30/01/2013 Dan Macklin
-===========================================
+#erlang_cep v0.1 Beta 30/01/2013
 
 A Complex Event Processing (CEP) engine written in erlang that makes use of javascript to
 simplify the creation of CEP rules.  Designed to run on Linux / Unix systems.
 
-============
-Dependencies
-============
+##Dependencies
 
-1) Spider Monkey
-2) erlang_js
+1. Spider Monkey
+2. erlang_js
 
-==============================
-Compilation / run Instructions
-==============================
+##Compilation / run Instructions
 
 Get the dependencies
 
