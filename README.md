@@ -121,11 +121,11 @@ This is an example of a standard Row Function which will match if the price is g
 							
 The Row Function takes in three parameters :-
 
-1) row - A String holding the new json document to be matched (I refer to this as a Row).
-2) otherRow - A string holding the json data from the last / previous match.
-3) first - A boolean value set to true if this is an initial row check, false if this is checking the new row against previous values.
+1. row - A String holding the new json document to be matched (I refer to this as a Row).
+2. otherRow - A string holding the json data from the last / previous match.
+3. first - A boolean value set to true if this is an initial row check, false if this is checking the new row against previous values.
 
-*For standard windows only the row parameter is used.
+_NB_ For standard windows only the row parameter is used.
 
 The Row Function compiles the row String into a json object and then extracts the data. If the price is greater than 1.00 
 the function is said to have matched and returns a list containing the data.  N.B the order of this list is important as
@@ -133,8 +133,7 @@ it is used within Reduce Functions to generate aggregate values if the window fi
 
 If the Row Function fails to match it must return an empty list.
 
-A MatchRecognise Row Function
------------------------------
+###A MatchRecognise Row Function
 
 Next is an example of a matchRecognise Row Function.  MatchRecognise Functions can be called twice, once to check that new row data passes an initial
 match, then again to check new row data against previous matches.
@@ -143,56 +142,53 @@ When first is set to true this function is being called within the context of an
 
 When first is set to false this function is being called within the context of checking the new data against previous values.  
 
-<<"var rowFunction = function(row, otherRow, first){
-							
-							var myObject = JSON.parse(row);
-
-							symbol = myObject.symbol;
-							price = myObject.price;
-							volume = myObject.volume;
-
-							if (first == true){
-
-								if (price > 0.50){
-									return [symbol, price, volume];
-								}
-
-								else{
-									return [];
-								}
-							}
-
-							else{
-		
-								var prevObject = JSON.parse(otherRow);								
-
-								if (volume > prevObject.volume){
-									return true;
-								}
-
-								else{
-									return false;
-								}
-							}
-							
-						}">>.
+    <<"var rowFunction = function(row, otherRow, first){
+    							
+    							var myObject = JSON.parse(row);
+    
+    							symbol = myObject.symbol;
+    							price = myObject.price;
+    							volume = myObject.volume;
+    
+    							if (first == true){
+    
+    								if (price > 0.50){
+    									return [symbol, price, volume];
+    								}
+     
+    								else{
+    									return [];
+    								}
+    							}
+    
+    							else{
+    		
+    								var prevObject = JSON.parse(otherRow);								
+    
+    								if (volume > prevObject.volume){
+    									return true;
+    								}
+    
+    								else{
+    									return false;
+    								}
+    							}
+    							
+    						}">>.
 						
 
 The function takes in three parameters :-
 
-1) row 		- A String holding the new json document.
-2) otherRow - A string holding the json data from the last / previous match.
-3) first 	- A boolean value set to true when this function is called from the context of an initial check, and false when called in the context
-           	  of matchRecognise.
+1. row 		- A String holding the new json document.
+2. otherRow - A string holding the json data from the last / previous match.
+3. first 	- A boolean value set to true when this function is called from the context of an initial check, and false when called in the context of matchRecognise.
            	  
 The initial check code (first = true) is very similar to the standard Row Function returning an array of values if the row matches, and an empty list if
 it fails.
 
 The matchRecognise code (after the else) compares the new json row to a previous json row and returns true if the new data passes the test and false otherwise.
 
-================
-Reduce Functions
-================
+##Reduce Functions
 
 Reduce Functions are called to aggregate the results when a Window Fires.  For example if a window is set-up to look for three consecutive matches and three
 valid rows match the Row Function then the window will fire it's Reduce Function.
@@ -202,95 +198,89 @@ The Reduce Function takes in one parameter which is a multidimensional array con
 
 For example :-
 
-[["Goog", 2.00, 20], ["Goog", 2.01, 21]]
+    [["Goog", 2.00, 20], ["Goog", 2.01, 21]]
 
-<<"var reduceFunction = function(matches){
-							var sum = 0;
-
-							for(var i=0; i<matches.length; i++) {
-								var match = matches[i];
-								sum += match[2];
-							}
-
-							if (sum > 0){
-								return sum / matches.length;
-							}
-
-							return 0}">>.
+    <<"var reduceFunction = function(matches){
+	    						var sum = 0;
+     
+    							for(var i=0; i<matches.length; i++) {
+    								var match = matches[i];
+    								sum += match[2];
+    							}
+    
+    							if (sum > 0){
+    								return sum / matches.length;
+    							}
+    
+    							return 0}">>.
 							
 The Reduce Function can then return any value back to the CEP system.  In this example the volume attribute (the 3rd element in arrays returned from the Row Functions)
 is extracted and used to create an average volume.
 
-============
-The feed_api
-============
+##The feed_api
 
 The feed_api is used to :-
 
-1) create new feeds.
-2) create new windows.
-3) Subscribe your application to be notified when Reduce Functions run.
+1. create new feeds.
+2. create new windows.
+3. Subscribe your application to be notified when Reduce Functions run.
 
 The following code shows how to set-up a new feed, apply a new window and subscribe a process to updates.
 
-	%% Create a list containing some Binary Json.  [<<" valid json ">>, <<" Some more ">>]  
-	Data = window_api:create_json([{"1.01", "14"}, {"1.02", "15"}, {"2.00", "16"}]),
-
-	%% Generate a test Row Function - In practice this could come from a database it just has to be valid javascript within an Erlang binary.
-	RowFunction = window_api:create_match_recognise_row_function(),
-	
-	%% Generate a test Reduce Function - Again this could come from a database.
-	ReduceFunction = window_api:create_reduce_function(),
-	
-	%% Set-up a four second time based window looking for three consecutive matchRecognise rows.
-	QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}, {windowType, time}],
-	
-	%% Register a new feed called stress
-	feed_api:start_feed(stress),
-	
-	%% Create a new window called stressWin and apply it with out functions and parameters to the stress feed.
-	feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList),
-	
-	%% Spawn a callback function that will be messaged when the reduce function runs.
-	Pid = spawn(?MODULE, get_response, []),
-	
-	%% Subscribe the callback function to the stressWin window.
-	feed_api:subscribe_feed_window(stress, stressWin, Pid),
-	
-	lists:foreach(fun (Data) ->
-					%% Add data to the stress feed
-					feed_api:add_data(stress, DataElement)
-				  end, Data).
+    %% Create a list containing some Binary Json.  [<<" valid json ">>, <<" Some more ">>]  
+    Data = window_api:create_json([{"1.01", "14"}, {"1.02", "15"}, {"2.00", "16"}]),
+    
+    %% Generate a test Row Function - In practice this could come from a database it just has to be valid javascript within an Erlang binary.
+    RowFunction = window_api:create_match_recognise_row_function(),
+    	
+    %% Generate a test Reduce Function - Again this could come from a database.
+    ReduceFunction = window_api:create_reduce_function(),
+    	
+    %% Set-up a four second time based window looking for three consecutive matchRecognise rows.
+    QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}, {windowType, time}],
+    
+    %% Register a new feed called stress
+    feed_api:start_feed(stress),
+    	
+    %% Create a new window called stressWin and apply it with out functions and parameters to the stress feed.
+    feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList),
+    
+    %% Spawn a callback function that will be messaged when the reduce function runs.
+    Pid = spawn(?MODULE, get_response, []),
+    
+    %% Subscribe the callback function to the stressWin window.
+    feed_api:subscribe_feed_window(stress, stressWin, Pid),
+    
+    lists:foreach(fun (Data) ->
+    				%% Add data to the stress feed
+    				feed_api:add_data(stress, DataElement)
+    			  end, Data).
 
 The following code shows an example callback function.
 
-get_response() ->
-	receive
-		Results ->
-			io:format("Stress test fired ~p ~n", [Results]),
-			get_response()
-	end.
+    get_response() ->
+	    receive
+		    Results ->
+			    io:format("Stress test fired ~p ~n", [Results]),
+			    get_response()
+    	end.
 	
-==================
-Some more examples
-=================
+##Some more examples
 
 Please look in stress_test.erl (run_match_test() and run_every_test()) for more examples.
 
 There are also several good examples within the enit tests within feed_api.erl.
 
-====
-TODO
-====
+##TODO
 
-Please note that this is a very early beta release, and I am quite new to erlang..........
+Please note that this is a very early beta release, and I'm quite new to erlang..........
 
-1) Implement every queries for standard windows.
-2) Look at failure scenarios.  Currently subscriptions will not survive process failures.
-3) Implement more advanced CEP algorithms such as Rete
-4) Work out how to join windows.
-5) Use Mnesia to try to make windows HA.
-6) Write a web based UI to allow users to create feeds and view results.
-7) Test, test and test again
-8) Some more stress tests.
-9) My MatchRecognise queries are very basic.  Add more functionality.
+1. Implement every queries for standard windows.
+2. Look at failure scenarios.  Currently subscriptions will not survive process failures.
+3. Implement more advanced CEP algorithms such as Rete
+4. Work out how to join windows.
+5. Use Mnesia to try to make windows HA.
+6. Write a web based UI to allow users to create feeds and view results.
+7. Test, test and test again
+8. Some more stress tests.
+9. My MatchRecognise queries are very basic.  Add more functionality.
