@@ -12,27 +12,25 @@ simplify the creation of CEP rules.  Designed to run on Linux / Unix systems.
 
 Get the dependencies
 
-1) make deps
+1. make deps
 
 Clean the build environment
 
-2) make clean
+2. make clean
 
 Build and deploy release
 
-3) make deploy
+3. make deploy
 
 Test
 
-4) make test
+4. make test
 
 Start the application
 
-5) make run
+5. make run
 
-=================
-How Does it Work?
-=================
+##How Does it Work?
 
 The erlang_cep feed_api facilitates the creation of Feeds and Windows where a Feed can
 have zero or many Windows. 
@@ -49,54 +47,34 @@ A good example would be a Stock Market Data Feed, where a Row Function would be 
 a particular symbol, price and volume.  The Reduce Function might then be used to calculate
 the average sale price of all matched items.
 
-===========
-Query Types
-===========
+##Query Types
 
 erlang_cep supports three types of query.
 
-Standard - Used to perform simple matches.  I.e. match every google stock with a sell price greater 
-		   than £10.
+* Standard - Used to perform simple matches.  I.e. match every google stock with a sell price greater than £10.
            
-matchRecognise - Used to perform matches that make a progression.  I.e. match every google stock with 
-				 a sell price greater than £10, where the next sale price is greater than the previous
-				 sell price.
+* matchRecognise - Used to perform matches that make a progression.  I.e. match every google stock with a sell price greater than £10, where the next sale price is greater than the previous sell price.
 				 
-every - Used to perform standard matches where the results are output at a regular interval.  I.e in a 60 second
-		window give me the average sale price for all Google trades.
+* every - Used to perform standard matches where the results are output at a regular interval.  I.e in a 60 second window give me the average sale price for all Google trades.
 
-============
-Window Types
-============   
+##Window Types
 
 erlang_cep supports two types of window.
 
-size - Size based windows have a fixed size.  Each time data is added the position is incremented. 
-       Once the position equals the window size the position resets to 0 and the data within the window
-       is overwritten and expired.
+* size - Size based windows have a fixed size.  Each time data is added the position is incremented. Once the position equals the window size the position resets to 0 and the data within the window is overwritten and expired.  For example a size based window of five elements would facilitate the storage and query of five data points. 
        
-       For example a size based window of five elements would facilitate the storage and query of five data points. 
+* time - Time based windows expire data after a predetermined period of time.  For example a 60 second timed window would facilitate the storage and query of any number of data points added within a 60 second period of time.
        
-time - Time based windows expire data after a predetermined period of time.
-
-       For example a 60 second timed window would facilitate the storage and query of any number of data points added
-       within a 60 second period of time.
-       
-====================
-Window Configuration
-====================
+##Window Configuration
 
 Windows are configured through a list of tuples.  Version 0.1 supports the following configuration parameters.
 
-{NumberOfMatches, Numeric} 					- The number of matches required to fire the Reduce Function.
-{WindowSize, Numeric}						- The size of the window (number of elements for size based windows, time in seconds for time based windows), 
-{WindowType , size / time}					- The type of the window size or time. 
-{Consecutive, consecutive / nonConsecutive}	- Specifies whether matches need to be made up from consecutive or nonConsecutive data elements.  For example
-				 							  if this flag is set to consecutive, and NumberOfMatches is set to 3, then the reduce function will fire
-				  							  if the Row Function for three consecutive elements match.
-				  
-{matchType, standard / matchRecognise / every}
-{resetStrategy, restart / noRestart}		- After the Reduce Function runs should the window be reset or carry on.
+* {NumberOfMatches, Numeric} - The number of matches required to fire the Reduce Function.
+* {WindowSize, Numeric} - The size of the window (number of elements for size based windows, time in seconds for time based windows), 
+* {WindowType , size / time} - The type of the window size or time. 
+* {Consecutive, consecutive / nonConsecutive} - Specifies whether matches need to be made up from consecutive or nonConsecutive data elements.  For example if this flag is set to consecutive, and NumberOfMatches is set to 3, then the reduce function will fire if the Row Function for three consecutive elements match			  
+* {matchType, standard / matchRecognise / every}
+* {resetStrategy, restart / noRestart}		- After the Reduce Function runs should the window be reset or carry on.
 
 The default WindowType is size.
 The default Consecutive parameter is consecutive.
@@ -109,40 +87,37 @@ Some examples :-
 
 Set up a standard four element size window, which will fire it's reduce function after three consecutive matches and then restart.
 
-QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}]
+    QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}]
 
 Set up a matchRecognise four element window, which will fire it's reduce function after three consecutive matches and then restart
 
-QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}],
+    QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}],
 
 Set up a matchRecognised four second time based window, which will fire it's reduce function after three consecutive matches
 and then restart.
 
-QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}, {windowType, time}],
+    QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}, {windowType, time}],
 
-=============
-Row Functions
-=============
+##Row Functions
 
 Row Functions are defined as erlang binaries.  There are two types of Row Function standard and matchRecognise.
 
-A Standard Row Function
------------------------
+###A Standard Row Function
 
 This is an example of a standard Row Function which will match if the price is greater than 1.00.
 
-	<<"var rowFunction = function(row, otherRow, first){
-							
-							var myObject = JSON.parse(row);
-							symbol = myObject.symbol;
-							price = myObject.price;
-							volume = myObject.volume;
-
-							if (price > 1.00){
-								return [symbol, price, volume];
-							}
-							
-							return []}">>.
+    <<"var rowFunction = function(row, otherRow, first){
+    							
+    							var myObject = JSON.parse(row);
+    							symbol = myObject.symbol;
+    							price = myObject.price;
+    							volume = myObject.volume;
+    
+    							if (price > 1.00){
+    								return [symbol, price, volume];
+    							}
+    							
+    							return []}">>.
 							
 The Row Function takes in three parameters :-
 
