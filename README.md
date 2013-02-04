@@ -12,23 +12,23 @@ simplify the creation of CEP rules.  Designed to run on Linux / Unix systems.
 
 Get the dependencies
 
-1. make deps
+    make deps
 
 Clean the build environment
 
-2. make clean
+    make clean
 
 Build and deploy release
 
-3. make deploy
+    make deploy
 
 Test
 
-4. make test
+    make test
 
 Start the application
 
-5. make run
+    make run
 
 ##How Does it Work?
 
