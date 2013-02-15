@@ -16,10 +16,30 @@
 -export([add_data/2, do_add_data/2, run_row_query/3, run_reduce_query/2, next_position/3,
 		 subscribe/2, unSubscribe/2, do_subscribe/2, do_unSubscribe/2, is_subscribed/2,
 		 create_json/1, create_standard_row_function/0, create_reduce_function/0, create_single_json/2,
-		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2]).
+		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2,
+		 add_json_parse_function/2, create_json_parse_function/0, view_json_parse_function/1, search/2, 
+		 do_search/2]).
 %%
 %% API Functions
 %%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @doc A json parse function is used to extract
+%%      pararameters from a json row.
+%%		For example lets say that this json is added 
+%% 		to the system {"glossary": {"title": "example glossary"}}
+%%		and we want to extract the title of the book, then
+%%		we would use the parse function to pull this out.
+%% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+add_json_parse_function(WindowName, JSONParseFunction) ->
+	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
+	ok = gen_server:cast(WindowPid, {jsonParseFunction, JSONParseFunction}).
+
+view_json_parse_function(WindowName) ->
+	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
+	{ok, ParseFunction} = gen_server:call(WindowPid, {checkJsonParseFunction}),
+	ParseFunction.	
 
 generate_tick(Delay, Process) ->
 	receive
@@ -32,6 +52,10 @@ generate_tick(Delay, Process) ->
 			io:format("after 2000 ~n")
 	end,
 	generate_tick(Delay, Process).
+
+do_search(WindowName, SearchParameter) ->
+	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
+	gen_server:call(WindowPid, {search, SearchParameter}).
 			
 subscribe(WindowName, Pid) ->
 	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
@@ -133,9 +157,9 @@ do_add_data(Row, State=#state{results=Results,
 	%% Return the state
   	State#state{position = NewPosition, results = ResultsDict, matches = MutatedMatches};
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Called by a feed_genserver to add data to a timed window %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data(Row, State=#state{results=Results, 
 							  matches=Matches, 
 							  position=Position, 
@@ -180,9 +204,48 @@ next_position(OldPosition, WindowSize, size) when ((WindowSize-1) == OldPosition
 next_position(OldPosition, _WindowSize, _) ->
 	OldPosition + 1.
 
+%% @doc Search the results dictionary within a window for a range of values [val1, '_' , val2]
+%%      where _ = don't care and the list has to be the size of the result list.
+search(SearchParameters, _State=#state{results=Results}) ->
+	runSearch(SearchParameters, Results).
+
+runSearch(SearchParameters, Results) ->
+	dict:fold(fun (_Key, {_Row,Value}, Acc) ->
+				case searchValue(SearchParameters, Value) of
+					true ->
+						[Value] ++ Acc;
+					false ->
+						Acc
+				end
+ 			end, [], Results).
+	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%Internal Stuff
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% @doc Take a list of search parameters [val1, '_', val2] and check against a list of results to
+%%      return true if the search parameters match and false otherwise.
+searchValue(SearchParameters, Values) ->
+	
+	SearchList = lists:zipwith(fun(SP,Val) -> match(SP, Val) end, SearchParameters, Values),
+	
+	lists:foldl(fun(Value, Acc) ->
+						case Acc of
+								false ->
+									Acc;
+								true ->
+									Value
+						end
+				end, true, SearchList).
+
+match('_', _Value) ->
+	true;
+
+match(Parameter, Value) when Parameter == Value ->
+	true;
+
+match(_Parameter, _Value) ->
+	false.
 
 %% @doc Run the row query passing in an empty second parameter meaning that we are not matching
 %% 		against any other data in the window
@@ -215,6 +278,43 @@ add_match(Matches, Position, _MatchType) ->
 remove_match(Matches, Position) ->
 	[lists:delete(Position, X) || X <- Matches].
 
+%% @doc Parse a parameter from an input document.
+parse_parameter(json, Row, Parameter, JSPort) ->
+	%% I hate parsing json in erlang!
+	js:call(JSPort, <<"parseJSON">>, Parameter, Row);
+
+parse_parameter(array, Row, Position, JSPort) ->
+	lists:nth(Position, Row).
+
+create_json_parse_function() ->
+	<<"var parseJSON = function(parameter, row){
+							var myObject = JSON.parse(row);
+
+							for (var key in myObject) {
+  								if(key == parameter){
+    								return(myObject[key]);
+    								break;
+  								}
+							} 
+		">>.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Test Search function
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create_results_dict() ->
+	dict:store(2, {"", ["Goog", 1.01, 13]}, dict:store(1, {"", ["Goog", 1.00, 12]}, dict:new())).
+
+do_pass_search_test() ->	
+	?assertEqual([["Goog", 1.01, 13], ["Goog", 1.00, 12]], 
+				 	runSearch(["Goog", '_', '_'], create_results_dict())). 
+
+do_pass_search_13_test() ->
+	?assertEqual([["Goog", 1.01, 13]], runSearch(["Goog", '_', 13], create_results_dict())). 
+
+do_pass_search_fail_test() ->
+	?assertEqual([], runSearch(["Goog1", '_', 13], create_results_dict())). 
+	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 %% Size based window Tests
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -847,13 +947,13 @@ create_initial_state(QueryParameterList, RowFunction, ReduceFunction) ->
 %% @doc A test that starts everything up and then subscribes this process for
 %% 		updates, and checks that it is subscribed.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-subscribe_test() ->
-	erlang_js:start(),
-	window_sup:start_link(testFeed1),
-	QueryParameters = {3, 4, size, consecutive, standard, restart},
-	window_sup:start_child(testFeed1, testWin111, create_standard_row_function(), create_reduce_function(), QueryParameters),
-	subscribe(testWin111, self()),
-	?assertEqual(is_subscribed(testWin111, self()), true).
+%%subscribe_test() ->
+%%	erlang_js:start(),
+%%	window_sup:start_link(testFeed1),
+%%	QueryParameters = {3, 4, size, consecutive, standard, restart},
+%%	window_sup:start_child(testFeed1, testWin111, create_standard_row_function(), create_reduce_function(), QueryParameters),
+%%	subscribe(testWin111, self()),
+%%	?assertEqual(is_subscribed(testWin111, self()), true).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Timed Window Tests

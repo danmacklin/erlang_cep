@@ -224,6 +224,7 @@ The feed_api is used to :-
 1. create new feeds.
 2. create new windows.
 3. Subscribe your application to be notified when Reduce Functions run.
+4. Search within windows.
 
 The following code shows how to set-up a new feed, apply a new window and subscribe a process to updates.
 
@@ -264,7 +265,25 @@ The following code shows an example callback function.
 			    io:format("Stress test fired ~p ~n", [Results]),
 			    get_response()
     	end.
-	
+    	
+##Searching
+
+You can search within a window by calling feed_api:search_window(FeedName, WindowName, SearchParameter).
+
+Where :-
+
+1. FeedName is the name of the feed;
+2. WindowName is the name of the window;
+3. SearchName is the search parameters in the format of a list.  Where the length of the list has to be the same size as the list returned from your row function.
+
+For example :-
+
+['_', '_', '_'] - List all of the results in the window.
+
+["GOOG", '_', '_'] - List all of the results where the first value returned from the row function is "GOOG".
+
+["GOOG", 1.01, 12] - Lists all of the results where the stock is GOOG, the price is 1.01 and the volume is 12.	
+
 ##Some more examples
 
 Please look in stress_test.erl (run_match_test() and run_every_test()) for more examples.
@@ -284,3 +303,45 @@ Please note that this is a very early beta release, and I'm quite new to erlang.
 7. Test, test and test again
 8. Some more stress tests.
 9. My MatchRecognise queries are very basic.  Add more functionality.
+
+##Proposal for inter-window look-ups
+
+It might be useful to write row functions that are able to pull values from other windows.
+
+Lets say that we have a time based window containing the IPAddresses and usernames from which people have tried to hack
+our systems within the last hour.  We call this window hackerWindow.
+
+We now have a requirement to work out the value of all transactions from ip addresses that reside within
+this hacker window.
+			
+create_lookup_standard_row_function() ->
+	    <<"var rowFunction = function(row, otherRow, first, OtherWindowsData){
+    							
+    							var myObject = JSON.parse(row);
+    							srcIp = myObject.srcIp;
+    							url = myObject.url;
+    							transactionValue = myObject.transactionValue
+    							
+    							var matched = false;
+    							
+    							exitLoop:
+    							for (int x=0; x < otherWindowsData.length; x++)
+    							{
+    								for (int y=0; y< otherWindowsData[x][y].length; y++) 
+    									if (otherWindowsData[x][y][0] == srcIp)
+    									{
+    										matched = true;
+    										break exitLoop;
+    									}
+    								}
+    							}
+    
+    							if (matched == true){
+    								return [srcIp, url, transactionValue];
+    							}
+    							
+    							return []}">>.
+
+So how do we populate otherWindowMatches?
+
+We call out to the feed genserver for a list of [{feedName, windowName}].  This returns [ [[win1res1,win1res2],[win1res1,win1res2]], [[win2res1, win2res2]] ].

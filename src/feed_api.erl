@@ -13,7 +13,8 @@
 %% Exported Functions
 %%
 -export([start_feed/1, get_feed_genserver_name/1, crash_feed_genserver/1, start_window/5, stop_window/2,
-		 add_data/2, do_add_data/2, subscribe_feed_window/3, do_subscribe_feed_window/2, receive_message/1]).
+		 add_data/2, do_add_data/2, subscribe_feed_window/3, do_subscribe_feed_window/2, receive_message/1,
+		 add_json_parse_function/3, view_json_parse_function/2, search_window/3]).
 
 %%
 %% API Functions
@@ -58,6 +59,19 @@ do_add_data(Data, WindowPidsList) ->
 	lists:foreach(fun({_WindowName, Pid}) ->
 						  gen_server:cast(Pid, {add_data, Data})
 				  end, WindowPidsList).
+
+add_json_parse_function(FeedName, WindowName, JSONParseFunction) ->
+	gen_server:cast(get_feed_genserver_name(FeedName), {addJsonParseFunction, WindowName, JSONParseFunction}).
+
+view_json_parse_function(FeedName, WindowName) ->
+	gen_server:call(get_feed_genserver_name(FeedName), {viewJsonParseFunction, WindowName}).
+
+
+%% @doc Perform a search within a window.  The search parameter is a list, where '_' is a wild card
+%%		for example ["GOOG", '_', 12]  will find all of the stocks at any price with a volume of 12. 
+%% @end
+search_window(FeedName, WindowName, SearchParameter) ->
+	gen_server:call(get_feed_genserver_name(FeedName), {search, WindowName, SearchParameter}).
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Tests
@@ -103,7 +117,9 @@ standard_end_to_end_3_elements_test() ->
 	after 4000 ->
 			io:format("Timed out ~n"),
 			p=y
-	end.
+	end,
+	
+	?assertEqual([[<<"GOOG">>,2,12]], search_window(testFeed, testWinFeed, [<<"GOOG">>, '_' , 12])).
 
 %% @doc This test uses a matchRecognise function to check that the volume is increasing each time within the window.
 match_recognise_end_to_end_3_elements_test() ->	
@@ -116,7 +132,7 @@ match_recognise_end_to_end_3_elements_test() ->
 	
 	start_feed(testFeedMatchRecognise),
 	
-	start_window(testWinFeedMatchRecognise, testFeedMatchRecognise, RowFunction, ReduceFunction, QueryParameterList),
+	start_window(testWinFeedMatchRecognise, testFeedMatchRecognise, RowFunction, ReduceFunction,  QueryParameterList),
 	
 	Pid = spawn(?MODULE, receive_message, [self()]),
 	
@@ -189,3 +205,40 @@ time_every_end_to_end_3_elements_test() ->
 			io:format("Timed out ~n"),
 			p=y
 	end.
+
+%% @doc test querying a window
+query_test() ->
+	Data = window_api:create_json([{"1.01", "14"}, {"1.02", "15"}, {"2.00", "16"}]),
+	RowFunction = window_api:create_match_recognise_row_function(),
+	ReduceFunction = window_api:create_reduce_function(),
+	
+	QueryParameterList = [{windowSize, 2}, {matchType, every}, {windowType, time}],
+	
+	start_feed(queryFeed),
+	
+	start_window(queryWin, queryFeed, RowFunction, ReduceFunction, QueryParameterList),
+	
+	ParseFunction = window_api:create_json_parse_function(),
+	
+	%% Set the parse function which is used to extract parameters from a JSON document (i.e. a new ROW)
+	add_json_parse_function(queryFeed, queryWin, ParseFunction),
+	
+	%% Check that it's been set
+	?assertEqual(ParseFunction, view_json_parse_function(queryFeed, queryWin)),
+	
+	Pid = spawn(?MODULE, receive_message, [self()]),
+	
+	subscribe_feed_window(queryFeed, queryWin, Pid),
+	
+	lists:foreach(fun (DataElement) ->
+					add_data(queryFeed, DataElement)
+				  end, Data),
+	receive
+		Results ->
+			io:format("fired~n"),
+			?assertEqual(15, Results)
+	after 4000 ->
+			io:format("Timed out ~n"),
+			p=y
+	end.
+	

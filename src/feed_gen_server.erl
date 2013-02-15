@@ -59,7 +59,13 @@ handle_call({getState}, _From, State) ->
     Reply = ok,
     {reply, Reply, State};
 
-handle_call(Request, From, State) ->
+handle_call({search, WindowName, SearchParameter}, _From, State) ->
+	{reply, window_api:do_search(WindowName, SearchParameter), State};
+
+handle_call({viewJsonParseFunction, WindowName}, _From, State) ->
+	 {reply, window_api:view_json_parse_function(WindowName), State};
+
+handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
@@ -82,7 +88,6 @@ handle_cast({startWindow, WindowName, FeedName, RowFunction, ReduceFunction, Que
 	{noreply, State#feedState{windowPids = [{WindowName,Pid} | WindowPids]}};
 
 handle_cast({stopWindow, WindowName}, State=#feedState{windowPids = WindowPids}) ->
-	%%FullWindowName = window_api:get_window_name(FeedName, WindowName),
 	{_WindowName, Pid} = lists:keyfind(WindowName, 1, WindowPids),
 	
 	gen_server:cast(Pid, {stop}),
@@ -95,6 +100,10 @@ handle_cast({addData, Data}, State=#feedState{windowPids = WindowPidList}) ->
 
 handle_cast({subscribe, WindowName, Pid}, State) ->
 	feed_api:do_subscribe_feed_window(WindowName, Pid),
+	{noreply, State};
+
+handle_cast({addJsonParseFunction, WindowName, JSONParseFunction}, State) ->
+	window_api:add_json_parse_function(WindowName, JSONParseFunction),
 	{noreply, State};
 
 handle_cast(_Msg, State) ->
