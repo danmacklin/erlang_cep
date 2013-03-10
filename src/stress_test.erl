@@ -12,8 +12,6 @@
 %% Include files
 %%
 
--include_lib("eunit/include/eunit.hrl").
-
 %%
 %% Exported Functions
 %%
@@ -77,7 +75,7 @@ run_match_stress() ->
 	
 	feed_api:start_feed(stress),
 	
-	feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList),
+	feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList, [0.50]),
 	
 	Pid = spawn(?MODULE, get_response, []),
 	StressPid = spawn(?MODULE, apply_data, []),
@@ -104,7 +102,7 @@ run_every_stress() ->
 	
 	feed_api:start_feed(stress),
 	
-	feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList),
+	feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList, [0.50]),
 	
 	Pid = spawn(?MODULE, get_response, []),
 	StressPid = spawn(?MODULE, apply_data, []),

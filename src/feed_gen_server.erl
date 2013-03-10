@@ -37,8 +37,8 @@
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([Name]) ->
-	io:format("Starting feed_gen_server ~p ~n", [Name]),
-    {ok, #feedState{name=Name, windowPids=[]}}.
+	%%io:format("Starting feed_gen_server ~p ~n", [Name]),
+    {ok, #feedState{name=Name, windowPids=[], searchDict=dict:new()}}.
 
 start_link(Name) -> 
 	gen_server:start_link({local, feed_api:get_feed_genserver_name(Name)}, ?MODULE, [Name], []).
@@ -60,10 +60,11 @@ handle_call({getState}, _From, State) ->
     {reply, Reply, State};
 
 handle_call({search, WindowName, SearchParameter}, _From, State) ->
-	{reply, window_api:do_search(WindowName, SearchParameter), State};
+	{reply, search_api:do_search(WindowName, SearchParameter), State};
 
-handle_call({viewJsonParseFunction, WindowName}, _From, State) ->
-	 {reply, window_api:view_json_parse_function(WindowName), State};
+handle_call({viewSearches, WindowName}, _From, State=#feedState{searchDict=SearchDict}) ->
+	%%{reply, window_api:view_searches(WindowName), State};
+	{reply, feed_api:do_view_searches(SearchDict, WindowName), State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -82,9 +83,8 @@ handle_call(_Request, _From, State) ->
 handle_cast({generateError}, _State) ->
 	p=y;
 
-handle_cast({startWindow, WindowName, FeedName, RowFunction, ReduceFunction, QueryParameters}, State=#feedState{windowPids = WindowPids}) ->
-	
-	Pid = window_sup:start_child(FeedName, WindowName, RowFunction, ReduceFunction, QueryParameters),
+handle_cast({startWindow, WindowName, FeedName, RowFunction, ReduceFunction, QueryParameters, Parameters}, State=#feedState{windowPids = WindowPids}) ->	
+	Pid = window_sup:start_child(FeedName, WindowName, RowFunction, ReduceFunction, QueryParameters, Parameters),
 	{noreply, State#feedState{windowPids = [{WindowName,Pid} | WindowPids]}};
 
 handle_cast({stopWindow, WindowName}, State=#feedState{windowPids = WindowPids}) ->
@@ -94,18 +94,22 @@ handle_cast({stopWindow, WindowName}, State=#feedState{windowPids = WindowPids})
 	
 	{noreply, State#feedState{windowPids = lists:keydelete(WindowName, 1, WindowPids)}};
 
-handle_cast({addData, Data}, State=#feedState{windowPids = WindowPidList}) ->
-	feed_api:do_add_data(Data, WindowPidList),
+handle_cast({addData, Data}, State=#feedState{windowPids = WindowPidList, searchDict=SearchDict}) ->
+	feed_api:do_add_data(Data, WindowPidList, SearchDict),
 	{noreply, State};
 
 handle_cast({subscribe, WindowName, Pid}, State) ->
 	feed_api:do_subscribe_feed_window(WindowName, Pid),
 	{noreply, State};
 
-handle_cast({addJsonParseFunction, WindowName, JSONParseFunction}, State) ->
-	window_api:add_json_parse_function(WindowName, JSONParseFunction),
-	{noreply, State};
+handle_cast({addSearches, WindowName, Searches}, State=#feedState{searchDict=SearchDict}) ->
+	%%window_api:add_searches(WindowName, Searches),
+	{noreply, State#feedState{searchDict=feed_api:do_add_searches(SearchDict, WindowName, Searches)}};
 
+handle_cast({removeSearches, WindowName, Searches}, State=#feedState{searchDict=SearchDict}) ->
+	%%window_api:remove_searches(WindowName, Searches),
+	{noreply, State#feedState{searchDict=feed_api:do_remove_searches(WindowName, Searches, SearchDict)}};
+	
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -125,7 +129,7 @@ handle_info(Info, State) ->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 terminate(Reason, State) ->
-	io:format("feed_genserver_terminating ~p ~n", [self()]),
+	%%io:format("feed_genserver_terminating ~p ~n", [self()]),
     ok.
 
 %% --------------------------------------------------------------------

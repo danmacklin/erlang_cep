@@ -12,22 +12,27 @@
 %%
 %% Exported Functions
 %%
--export([do_match/7, run_reduce_function/6]).
+-export([do_match/9, run_reduce_function/6]).
 
 %%
 %% API Functions Note this only gets called after an initial first pass match.
 %%
 
 do_match(_QueryParameters, 
-		 _ResultsDict, Matches, _JSPort, _Position, _PidList, false) ->
+		 _ResultsDict, Matches, _JSPort, _Position, _PidList, false, _Parameters, _Joins) ->
+	Matches;
+
+%% If the Number of Matches = 0 then don't perform matches.
+do_match({0, _WindowSize, _WindowType, _Consecutive, _MatchType, _RestartStrategy} = _QueryParameters, 
+		 _ResultsDict, Matches, _JSPort, _Position, _PidList, _First, _Parameters, _Joins) ->
 	Matches;
 
 do_match({NumberOfMatches, WindowSize, WindowType, Consecutive, MatchType, RestartStrategy} = _QueryParameters, 
-		 ResultsDict, Matches, JSPort, Position, PidList, true) ->
+		 ResultsDict, Matches, JSPort, Position, PidList, true, Parameters, Joins) ->
 
 	case MatchType of 
 		matchRecognise ->
-			MutatedMatchList = is_match_recognise(ResultsDict, Position, JSPort, Matches, Consecutive, RestartStrategy),
+			MutatedMatchList = is_match_recognise(ResultsDict, Position, JSPort, Matches, Consecutive, RestartStrategy, Parameters, Joins),
 			run_reduce_function(PidList, MutatedMatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy);
 		standard ->
 			MutatedMatchList = is_match(Matches, NumberOfMatches, WindowSize, Consecutive, WindowType),
@@ -119,15 +124,15 @@ extract_results(MatchList, ResultsDict) ->
 
 %% 		An empty match list must return an empty match list.
 %%	@end
-is_match_recognise(_ResultsDict, _Position, _JSPort, [[]], consecutive, _RestartStrategy) ->
+is_match_recognise(_ResultsDict, _Position, _JSPort, [[]], consecutive, _RestartStrategy, _Parameters, _Joins) ->
 	[[]];
 
-is_match_recognise(_ResultsDict, Position, _JSPort, [[Position]] = Matches, consecutive, _RestartStrategy) ->
+is_match_recognise(_ResultsDict, Position, _JSPort, [[Position]] = Matches, consecutive, _RestartStrategy, _Parameters, _Joins) ->
 	Matches;
 
-is_match_recognise(ResultsDict, Position, JSPort, Matches, consecutive, RestartStrategy) ->
+is_match_recognise(ResultsDict, Position, JSPort, Matches, consecutive, RestartStrategy, Parameters, Joins) ->
 	lists:foldl(fun(Match, Acc) ->
-						case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy) of
+						case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy, Parameters, Joins) of
 							[] ->
 								%% Remember that although the row function has failed it has still passed it's first test!
 								[[Position]] ++ Acc;
@@ -139,16 +144,16 @@ is_match_recognise(ResultsDict, Position, JSPort, Matches, consecutive, RestartS
 %% @doc For non consecutive if there is no match add a new match element to the match list.
 %% 		i.e. Before [[1,2,3]] 4 doesn't match so we have [[1,2,3], [4]] 
 %% @end
-is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, RestartStrategy) ->
+is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, RestartStrategy, Parameters, Joins) ->
 	lists:foldl(fun(Match, Acc) ->
-						do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc)
+						do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins)
 				end,[], Matches).
 
-do_match_recognise_nonConsecutive(_ResultsDict, Position, _JSPort, [Position] = Match, _RestartStrategy, _Acc) ->
+do_match_recognise_nonConsecutive(_ResultsDict, Position, _JSPort, [Position] = Match, _RestartStrategy, _Acc, _Parameters, _Joins) ->
 	[Match];
 
-do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc) ->
-	case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy) of
+do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins) ->
+	case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy, Parameters, Joins) of
 		[] ->
 			%% Remember that although the row function has failed it has still passed it's first test!
 			[[Position]] ++ [Match] ++ Acc;
@@ -156,10 +161,10 @@ do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartS
 			[MatchListResult] ++ Acc
 	end.
 
-run_match_recognise_row_function(_ResultsDict, _Position, _JSPort, [] , _RestartStrategy) ->
+run_match_recognise_row_function(_ResultsDict, _Position, _JSPort, [] , _RestartStrategy, _Parameters, _Joins) ->
 	[];
 
-run_match_recognise_row_function(ResultsDict, Position, JSPort, MatchList, _RestartStrategy) ->
+run_match_recognise_row_function(ResultsDict, Position, JSPort, MatchList, _RestartStrategy, Parameters, Join) ->
 	%% run the match recognise row function on the last element of the MatchList.  
     %% When running second matches the Matched Data is an array [goog, price.......
 	
@@ -167,7 +172,7 @@ run_match_recognise_row_function(ResultsDict, Position, JSPort, MatchList, _Rest
 		
 	{MatchedRow, _MatchedResult} = dict:fetch(get_last(MatchList), ResultsDict),
 			
-	case window_api:run_row_query(JSPort, NewRow, MatchedRow) of
+	case window_api:run_row_query(Parameters, Join, JSPort, NewRow, MatchedRow) of
 		{ok, false} ->
 					[];
 					
@@ -193,7 +198,7 @@ get_last(MatchList) ->
 %% @end
 is_match(Matches, NumberOfMatches, WindowSize, consecutive, WindowType) ->
 	lists:foldl(fun(Match, Acc) ->
-						io:format("Match = ~p ~n", [Match]),
+						%%io:format("Match = ~p ~n", [Match]),
 						case is_consecutive(Match, start, [], WindowSize, NumberOfMatches, WindowType) of
 							[] ->
 								Acc;

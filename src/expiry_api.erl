@@ -84,15 +84,12 @@ expiry_list_swap(TimingsDict, CurrentSecond) ->
 expiry_list_reset_old(TimingsDict, CurrentSecond, MatchList, ResultsDict) ->
 	case dict:find(CurrentSecond, TimingsDict) of
 		error ->
-			%%io:format("expiry_list_reset_old NotFound second = ~p ~n", [CurrentSecond]),
 			{TimingsDict, MatchList, ResultsDict};
 		{ok, TimingsRecord} ->
 			
 			%% Remove any matches from oldData from the resultsDict and match list
 			OldList = TimingsRecord#timingData.oldData,
-			
-			%%io:format("expiry_list_reset_old OldList = ~p second = ~p ~n", [OldList, CurrentSecond]),
-			
+				
 			{dict:store(CurrentSecond, TimingsRecord#timingData{oldData=[]}, TimingsDict),
 			 remove_from_match_list(MatchList, OldList),
 			 remove_from_results_dict(OldList, ResultsDict)}
@@ -107,13 +104,13 @@ remove_from_match_list(MatchList, OldList) ->
 					window_api:remove_match(Acc, SeqNo)
 				end, MatchList, OldList).
 	
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc The timed dict holds an old and new list for each second within the window.
 %% 		These lists hold the values in the format [{SeqNo, TimeStamp}, {SeqNo, TimeStamp}]
 %% 		This function takes in this list and returns {ListOfElementsThatHavePassedExpiryTest (to be kept), 
 %% 		ListOfElementsThatHaveFailedExpiryTest (to be deleted)}
 %% @end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 expire(List, Now, WindowSize) ->
 	expire(List, Now, WindowSize, [], []).
 

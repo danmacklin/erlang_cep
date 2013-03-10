@@ -18,7 +18,7 @@
 -export([]).
 
 %% gen_server callbacks
--export([init/1, start_link/4, handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
+-export([init/1, start_link/5, handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
 		 code_change/3]).
 
 %% ====================================================================
@@ -38,7 +38,7 @@
 %%          ignore               |
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
-init([Name, RowQuery, ReduceQuery, QueryParameters]) ->
+init([Name, RowQuery, ReduceQuery, QueryParameters, Parameters]) ->
 
 	{_NumberOfMatches, _WindowSize, WindowType, _Consecutive, _MatchType, _ResetStrategy} = QueryParameters,
 	{ok, JSPort} = js_driver:new(),
@@ -57,10 +57,10 @@ init([Name, RowQuery, ReduceQuery, QueryParameters]) ->
 	
 	{ok, #state{name = Name, position = 0, results = dict:new(), matches = [[]], timingsDict = dict:new(), rowQuery = RowQuery, 
 				reduceQuery = ReduceQuery, queryParameters = QueryParameters, jsPort = JSPort, pidList = [], sequenceNumber=0, 
-				jsonParseFunction = <<"">>}}. 
+				parameters = Parameters, searches = []}}. 
 
-start_link(Name, RowQuery, ReduceQuery, QueryParameters) -> 
-	gen_server:start_link(?MODULE, [Name, RowQuery, ReduceQuery, QueryParameters], []).
+start_link(Name, RowQuery, ReduceQuery, QueryParameters, Parameters) -> 
+	gen_server:start_link(?MODULE, [Name, RowQuery, ReduceQuery, QueryParameters, Parameters], []).
 
 %% --------------------------------------------------------------------
 %% Function: handle_call/3
@@ -82,11 +82,11 @@ handle_call({isSubscribed, Pid}, _From, State=#state{pidList = PidList}) ->
 			end,
     {reply, Reply, State};
 
-handle_call({checkJsonParseFunction}, _From, State=#state{jsonParseFunction = JsonParseFunction}) ->
-	{reply, {ok, JsonParseFunction}, State};
+handle_call({getSearches}, _From, State=#state{searches = Searches}) ->
+	{reply, {ok, Searches}, State};
 
 handle_call({search, SearchParameter}, _From, State) ->
-	{reply, window_api:search(SearchParameter, State), State};
+	{reply, search_api:search(SearchParameter, State), State};
 
 handle_call(Request, _From, State) ->
 	io:format("Unexpected call message ~p ~n", [Request]),
@@ -100,8 +100,8 @@ handle_call(Request, _From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_cast({add_data, Data}, State) ->
-	{noreply, window_api:do_add_data(Data, State)};
+handle_cast({add_data, Data, Joins}, State) ->
+	{noreply, window_api:do_add_data(Data, State, Joins)};
 
 handle_cast({subscribe, Pid}, State) ->
 	{noreply, window_api:do_subscribe(Pid, State)};
@@ -109,11 +109,16 @@ handle_cast({subscribe, Pid}, State) ->
 handle_cast({unSubscribe, Pid}, State) ->
 	{noreply, window_api:do_unSubscribe(Pid, State)};
 
-%% @doc parse functions are used to extract data from a json
-%%		row document so that a window can be searched.
-%% @end
-handle_cast({jsonParseFunction, JSONParseFunction}, State) ->
-	{noreply, State#state{jsonParseFunction=JSONParseFunction}};
+handle_cast({addSearches, NewSearches}, State = #state{searches = Searches})->
+	{noreply, State#state{searches=lists:append(NewSearches, Searches)}};
+
+handle_cast({removeSearches, RemoveSearches}, State = #state{searches = Searches})->
+	
+	NewSearches = lists:foldl(fun(Element, Acc) ->
+									  lists:delete(Element, Acc)
+							  end, Searches, RemoveSearches),
+	
+	{noreply, State#state{searches = NewSearches}};
 
 handle_cast({stop}, State) ->
     {stop, normal, State};

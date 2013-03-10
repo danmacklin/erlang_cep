@@ -16,10 +16,11 @@
 %% API Functions
 %%
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc The system has the following query parameters
 %% 		QueryParameters = {4, consecutive, standard, reset, 3},
 %% 		{NumberOfMatches, WindowSize, WindowType, Consecutive, MatchType, ResetStrategy} = QueryParameters,
-
+%%
 %% 		windowType - size / time size = x no elements, time = window based on time). default = size
 %% 		windowSize - The size of the the window in seconds if time, or just size. Needs to be set or error
 %% 		consecutive - [consecutive / nonConsecutive] Do matches have to follow each other default Consecutive.  default consecutive
@@ -28,19 +29,20 @@
 %%              	 every adds every match to the matchlist (reduce run every window rollover)
 %%              	 default standard
 %% 		resetStrategy - [restart / noRestart] - After a match restart deletes all matches and starts again, noRestart carries on.  default restart
-%% 		numberOfMatches - The number of rows this query has to run before it matches.  Needs to be set or error
-
+%% 		numberOfMatches - The number of rows this query has to run before it matches.  Needs to be set for all windows other than every.
+%%
 %% 		Parameters come in as a list need to convert to a tuple for efficient pattern matching
 %% 		[{atom, parameter}]
-
+%%
 %% 		This is the minimum
 %% 		[{numberOfMatches, 5}, {windowSize, 6}]
-
+%%
 %% 		This is a more specialised example
 %% 		[{numberOfMatches, 5}, {windowSize, 6}, {windowType, size}]
-
+%%
 %% 		All unrecognised parameters need to generate an error.
 %%	@end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_parameters(ParameterList) ->
 	
 	case convert_parameters(ParameterList) of

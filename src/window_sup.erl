@@ -19,7 +19,7 @@
 %% --------------------------------------------------------------------
 %% Internal exports
 %% --------------------------------------------------------------------
--export([init/1, start_link/1, start_child/5]).
+-export([init/1, start_link/1, start_child/6]).
 
 %% --------------------------------------------------------------------
 %% Macros
@@ -58,8 +58,8 @@ start_link(FeedName) ->
 	supervisor:start_link({local, FeedName}, ?MODULE, []).
 
 %%TODO What if someone registers a name that is already registered?
-start_child(FeedName, Name, RowQuery, ReduceQuery, QueryParameters) ->
-	{ok,Pid} = supervisor:start_child(FeedName,[Name, RowQuery, ReduceQuery, QueryParameters]),
+start_child(FeedName, Name, RowQuery, ReduceQuery, QueryParameters, Parameters) ->
+	{ok,Pid} = supervisor:start_child(FeedName,[Name, RowQuery, ReduceQuery, QueryParameters, Parameters]),
 	
 	ets:insert(window_ets, {Name, Pid}),
 	

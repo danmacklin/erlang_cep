@@ -1,34 +1,25 @@
 #erlang_cep v0.1 Beta 30/01/2013
 
-A Complex Event Processing (CEP) engine written in erlang that makes use of javascript to
-simplify the creation of CEP rules.  Designed to run on Linux / Unix systems.
+A very simple Complex Event Processing (CEP) engine written in erlang OTP inspired by esper and CouchDB. 
 
-##Dependencies
+Erlang CEP facilitates the creation of one or many feeds, each with one or many windows.  
 
-1. Spider Monkey
-2. erlang_js
+A window is a programable entity that is used to look for patterns in data.  Windows are highly configurable
+but are normally time or size based.  Once a pattern has been found, the window fires and sends configurable
+messages to one or many interested processes.
 
-##Compilation / run Instructions
+Each window has two javascript functions.  
 
-Get the dependencies
+The Row Function runs every time a new item of data is applied to a window.
+It is used as a filter, only allowing data that matches predefined rules to be added to the window.  Depending on the
+complexity of the Row Function this could be a simple hard coded test, or a complex match function that compares new data
+to existing data looking for a specific pattern.
 
-    make deps
-
-Clean the build environment
-
-    make clean
-
-Build and deploy release
-
-    make deploy
-
-Test
-
-    make test
-
-Start the application
-
-    make run
+The Reduce Function runs every time a pattern is found.  It is used to aggregate data.  For example lets say that we
+wanted to create a stock trade window that stores holds all of the trades with a value of £10 or more over the last
+minute.  Every time we get a sequence of five trades where the price increases by £1 each time we want our query
+to fire.  The Reduce Function itterates over all of the values that have matched the pattern and can be used to
+run logic that aggregates the results.
 
 ##How Does it Work?
 
@@ -69,12 +60,15 @@ erlang_cep supports two types of window.
 
 Windows are configured through a list of tuples.  Version 0.1 supports the following configuration parameters.
 
-* {NumberOfMatches, Numeric} - The number of matches required to fire the Reduce Function.
-* {WindowSize, Numeric} - The size of the window (number of elements for size based windows, time in seconds for time based windows), 
-* {WindowType , size / time} - The type of the window size or time. 
+The first element in the tuple is the parameter name, the second is a value or atom.
+
+* {NumberOfMatches, Numeric} 	- The number of matches required to fire the Reduce Function.
+* {WindowSize, Numeric} 	- The size of the window (number of elements for size based windows, time in seconds for time based windows), 
+* {WindowType , size / time} 	- The type of the window size or time. 
 * {Consecutive, consecutive / nonConsecutive} - Specifies whether matches need to be made up from consecutive or nonConsecutive data elements.  For example if this flag is set to consecutive, and NumberOfMatches is set to 3, then the reduce function will fire if the Row Function for three consecutive elements match			  
 * {matchType, standard / matchRecognise / every}
-* {resetStrategy, restart / noRestart}		- After the Reduce Function runs should the window be reset or carry on.
+* {resetStrategy, restart / noRestart}	- After the Reduce Function runs should the window be reset or carry on.
+* {delete, yes / no} - After the Reduce Function runs should matched data be removed from the window.
 
 The default WindowType is size.
 The default Consecutive parameter is consecutive.
@@ -106,7 +100,7 @@ Row Functions are defined as erlang binaries.  There are two types of Row Functi
 
 This is an example of a standard Row Function which will match if the price is greater than 1.00.
 
-    <<"var rowFunction = function(row, otherRow, first){
+    <<"var rowFunction = function(parameters, joins, row, otherRow, first){
     							
     							var myObject = JSON.parse(row);
     							symbol = myObject.symbol;
@@ -119,11 +113,13 @@ This is an example of a standard Row Function which will match if the price is g
     							
     							return []}">>.
 							
-The Row Function takes in three parameters :-
+The Row Function takes in five parameters :-
 
-1. row - A String holding the new json document to be matched (I refer to this as a Row).
-2. otherRow - A string holding the json data from the last / previous match.
-3. first - A boolean value set to true if this is an initial row check, false if this is checking the new row against previous values.
+1. parameters - A list of parameters that are passed into the rowFunction.  Can be useful for when you want to pass some filters into your row function i.e. if (price > parameters[0]) rather than if (price > 1.00)
+2. joins - A list of joined data where each row in the list represents a join.  [ [FeedName, WindowName, [ Joined Rows ]] ]
+3. row - A String holding the new json document to be matched (I refer to this as a Row).
+4. otherRow - A string holding the json data from the last / previous match.
+5. first - A boolean value set to true if this is an initial row check, false if this is checking the new row against previous values.
 
 _NB_ For standard windows only the row parameter is used.
 
@@ -142,7 +138,7 @@ When first is set to true this function is being called within the context of an
 
 When first is set to false this function is being called within the context of checking the new data against previous values.  
 
-    <<"var rowFunction = function(row, otherRow, first){
+    <<"var rowFunction = function(parameters, joins, row, otherRow, first){
     							
     							var myObject = JSON.parse(row);
     
@@ -179,9 +175,11 @@ When first is set to false this function is being called within the context of c
 
 The function takes in three parameters :-
 
-1. row 		- A String holding the new json document.
-2. otherRow - A string holding the json data from the last / previous match.
-3. first 	- A boolean value set to true when this function is called from the context of an initial check, and false when called in the context of matchRecognise.
+1. parameters - A list of parameters that are passed into the rowFunction.  Can be useful for when you want to pass some filters into your row function i.e. if (price > parameters[0]) rather than if (price > 1.00)
+2. joins - A list of joined data where each row in the list represents a join.  [ [FeedName, WindowName, [ Joined Rows ]] ]
+3. row 		- A String holding the new json document.
+4. otherRow - A string holding the json data from the last / previous match.
+5. first 	- A boolean value set to true when this function is called from the context of an initial check, and false when called in the context of matchRecognise.
            	  
 The initial check code (first = true) is very similar to the standard Row Function returning an array of values if the row matches, and an empty list if
 it fails.
@@ -226,6 +224,21 @@ The feed_api is used to :-
 3. Subscribe your application to be notified when Reduce Functions run.
 4. Search within windows.
 
+The important functions are :-
+
+1. feed_api:start_feed(<feed_name_atom>). - Starts a new feed gen_server named after the atom.
+2. feed_api:start_window(<window_name_atom>, <feed_name_atom>, RowFunction, ReduceFunction, QueryParameters, YourParameters). - Adds a window to the feed.
+3. feed_api:subscribe_feed_window(<feed_name_atom>, <window_name_atom>, Pid). - Subscribes a Pid to the feed / window.  This Pid is called when a match is found. 
+
+The parameters of start_window are :-
+
+1. The name of the window as an atom.
+2. The name for the feed as an atom.
+3. A binary containing the javascript row function.
+4. A binary containing the javascript reduce function.
+5. A list of configuration parameters.  View the Window Configuration section for more details.
+6. A list of custom parameters that you can pass into the match function to tailer matches.   
+
 The following code shows how to set-up a new feed, apply a new window and subscribe a process to updates.
 
     %% Create a list containing some Binary Json.  [<<" valid json ">>, <<" Some more ">>]  
@@ -244,7 +257,7 @@ The following code shows how to set-up a new feed, apply a new window and subscr
     feed_api:start_feed(stress),
     	
     %% Create a new window called stressWin and apply it with out functions and parameters to the stress feed.
-    feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList),
+    feed_api:start_window(stressWin, stress, RowFunction, ReduceFunction, QueryParameterList, []),
     
     %% Spawn a callback function that will be messaged when the reduce function runs.
     Pid = spawn(?MODULE, get_response, []),
@@ -268,13 +281,16 @@ The following code shows an example callback function.
     	
 ##Searching
 
-You can search within a window by calling feed_api:search_window(FeedName, WindowName, SearchParameter).
+You can search within a window by calling search_api:search_window(FeedName, WindowName, SearchParameter, Row, rowType).
 
 Where :-
 
 1. FeedName is the name of the feed;
 2. WindowName is the name of the window;
 3. SearchName is the search parameters in the format of a list.  Where the length of the list has to be the same size as the list returned from your row function.
+4. Row is the latest input row
+5. rowType is an atom.  Set this to hardCoded if you don't want to perform any substitution
+			Set to json if you want to perform json variable substitiution.
 
 For example :-
 
@@ -284,11 +300,62 @@ For example :-
 
 ["GOOG", 1.01, 12] - Lists all of the results where the stock is GOOG, the price is 1.01 and the volume is 12.	
 
+["Obj.symbol", '_', '_'] - Extracts Obj.symbol from the latest row if the rowType atom is set to json
+
 ##Some more examples
 
 Please look in stress_test.erl (run_match_test() and run_every_test()) for more examples.
 
 There are also several good examples within the enit tests within feed_api.erl.
+
+##Joining windows
+
+You can join windows by using the search function.
+
+Joins need to be formatted as a list and then added to a window using the feed_api:add_searches() function.
+
+For example :-
+
+		Search = [[joinFeedOne, joinWinOne, ['_', <<"Dan">>], hardCoded]],
+		feed_api:add_searches(joinFeedOne, joinWinTwo, Search). 
+
+This code sets up a hard coded search (i.e. one where search parameters do not need to be substituted) such that
+every time new data is added to the joinWinTwo window in the joinFeedOne feed, a query is run on the joinWinOne
+window looking for the string Dan in the second results field.
+
+The results of this search are applied to the join parameter within the row function in the format [ [FeedName, WindowName, [ Joined Rows ]] ].
+
+##Examples
+
+See examples.erl.
+
+##Dependencies
+
+1. Spider Monkey
+2. erlang_js
+
+##Compilation / run Instructions
+
+Get the dependencies
+
+    make deps
+
+Clean the build environment
+
+    make clean
+
+Build and deploy release
+
+    make deploy
+
+Test
+
+    make test
+
+Start the application
+
+    make run
+
 
 ##TODO
 
@@ -303,45 +370,3 @@ Please note that this is a very early beta release, and I'm quite new to erlang.
 7. Test, test and test again
 8. Some more stress tests.
 9. My MatchRecognise queries are very basic.  Add more functionality.
-
-##Proposal for inter-window look-ups
-
-It might be useful to write row functions that are able to pull values from other windows.
-
-Lets say that we have a time based window containing the IPAddresses and usernames from which people have tried to hack
-our systems within the last hour.  We call this window hackerWindow.
-
-We now have a requirement to work out the value of all transactions from ip addresses that reside within
-this hacker window.
-			
-create_lookup_standard_row_function() ->
-	    <<"var rowFunction = function(row, otherRow, first, OtherWindowsData){
-    							
-    							var myObject = JSON.parse(row);
-    							srcIp = myObject.srcIp;
-    							url = myObject.url;
-    							transactionValue = myObject.transactionValue
-    							
-    							var matched = false;
-    							
-    							exitLoop:
-    							for (int x=0; x < otherWindowsData.length; x++)
-    							{
-    								for (int y=0; y< otherWindowsData[x][y].length; y++) 
-    									if (otherWindowsData[x][y][0] == srcIp)
-    									{
-    										matched = true;
-    										break exitLoop;
-    									}
-    								}
-    							}
-    
-    							if (matched == true){
-    								return [srcIp, url, transactionValue];
-    							}
-    							
-    							return []}">>.
-
-So how do we populate otherWindowMatches?
-
-We call out to the feed genserver for a list of [{feedName, windowName}].  This returns [ [[win1res1,win1res2],[win1res1,win1res2]], [[win2res1, win2res2]] ].

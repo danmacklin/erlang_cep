@@ -13,34 +13,37 @@
 %%
 %% Exported Functions
 %%
--export([add_data/2, do_add_data/2, run_row_query/3, run_reduce_query/2, next_position/3,
+-export([add_data/2, do_add_data/3, run_row_query/5, run_reduce_query/2, next_position/3,
 		 subscribe/2, unSubscribe/2, do_subscribe/2, do_unSubscribe/2, is_subscribed/2,
 		 create_json/1, create_standard_row_function/0, create_reduce_function/0, create_single_json/2,
-		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2,
-		 add_json_parse_function/2, create_json_parse_function/0, view_json_parse_function/1, search/2, 
-		 do_search/2]).
+		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2]).
+		 %%add_searches/2, view_searches/1, remove_searches/2]).
 %%
 %% API Functions
 %%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% @doc A json parse function is used to extract
-%%      pararameters from a json row.
-%%		For example lets say that this json is added 
-%% 		to the system {"glossary": {"title": "example glossary"}}
-%%		and we want to extract the title of the book, then
-%%		we would use the parse function to pull this out.
+%% @doc	Each Window stores a list of the searches that are
+%%      used to join with other windows.
+%%		This function is used to add a list of searches to this list.
 %% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-add_json_parse_function(WindowName, JSONParseFunction) ->
-	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
-	ok = gen_server:cast(WindowPid, {jsonParseFunction, JSONParseFunction}).
+%%add_searches(WindowName, Searches) ->
+%%  [{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
+%%  ok = gen_server:cast(WindowPid, {addSearches, Searches}).
 
-view_json_parse_function(WindowName) ->
-	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
-	{ok, ParseFunction} = gen_server:call(WindowPid, {checkJsonParseFunction}),
-	ParseFunction.	
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @doc Return all of the searches applied to a window
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%view_searches(WindowName) ->
+%%	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
+%%	{ok, SearchList} = gen_server:call(WindowPid, {getSearches}),
+%%	SearchList.	
 
+%%remove_searches(WindowName, Searches) ->
+%%	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
+%%  	ok = gen_server:cast(WindowPid, {removeSearches, Searches}).
+	
 generate_tick(Delay, Process) ->
 	receive
 		tick ->
@@ -52,10 +55,6 @@ generate_tick(Delay, Process) ->
 			io:format("after 2000 ~n")
 	end,
 	generate_tick(Delay, Process).
-
-do_search(WindowName, SearchParameter) ->
-	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
-	gen_server:call(WindowPid, {search, SearchParameter}).
 			
 subscribe(WindowName, Pid) ->
 	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
@@ -130,9 +129,11 @@ do_add_data(Row, State=#state{results=Results,
 							  position=Position, 
 							  queryParameters={_NumberOfMatches, WindowSize, size, Consecutive, MatchType, _ResetStrategy} = QueryParameters,
 							  jsPort=JSPort,
-							  pidList=PidList}) ->
-	
-	{ok, RowResult} = run_row_query(JSPort, Row, []),
+							  parameters = Parameters,
+							  pidList=PidList,
+							  name = Name}, Joins) ->
+		
+	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, []),
 		
 	{NewMatches, FirstPassed} = case RowResult of 
 					[] ->
@@ -152,7 +153,7 @@ do_add_data(Row, State=#state{results=Results,
 	%% Move to next position
 	NewPosition = next_position(Position, WindowSize, size),
 	
-	MutatedMatches = match_engine:do_match(QueryParameters, ResultsDict, NewMatches, JSPort, Position, PidList, FirstPassed),
+	MutatedMatches = match_engine:do_match(QueryParameters, ResultsDict, NewMatches, JSPort, Position, PidList, FirstPassed, Parameters, Joins),
 
 	%% Return the state
   	State#state{position = NewPosition, results = ResultsDict, matches = MutatedMatches};
@@ -167,12 +168,16 @@ do_add_data(Row, State=#state{results=Results,
 							  jsPort=JSPort,
 							  pidList=PidList,
 							  sequenceNumber=SequenceNumber,
-							  timingsDict=TimingsDict}) ->
+							  parameters = Parameters,
+							  %%searches = Searches,
+							  timingsDict=TimingsDict}, Joins) ->
 		
 	Now = os:timestamp(),
 	NewSequenceNumber = SequenceNumber + 1,
 	
-	{ok, RowResult} = run_row_query(JSPort, Row, []),
+	%%Joins = join_api:run_joins(Searches, Row),
+	
+	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, []),
 			
 	{NewMatches, FirstPassed, NewTimingsDict} = case RowResult of 
 					[] ->
@@ -192,7 +197,7 @@ do_add_data(Row, State=#state{results=Results,
 	{FilteredTimingsDict, FilteredMatchList, FilteredResultsDict} = 
 			expiry_api:expire_from_expiry_dict(NewTimingsDict, SequenceNumber, NewMatches, ResultsDict, Now, WindowSize),
 		
-	MatchedMatches = match_engine:do_match(QueryParameters, FilteredResultsDict, FilteredMatchList, JSPort, SequenceNumber, PidList, FirstPassed),
+	MatchedMatches = match_engine:do_match(QueryParameters, FilteredResultsDict, FilteredMatchList, JSPort, SequenceNumber, PidList, FirstPassed, Parameters, Joins),
 	
 	%% Return the state
   	State#state{results = FilteredResultsDict, matches = MatchedMatches, timingsDict=FilteredTimingsDict, sequenceNumber = NewSequenceNumber}.
@@ -203,59 +208,20 @@ next_position(OldPosition, WindowSize, size) when ((WindowSize-1) == OldPosition
 
 next_position(OldPosition, _WindowSize, _) ->
 	OldPosition + 1.
-
-%% @doc Search the results dictionary within a window for a range of values [val1, '_' , val2]
-%%      where _ = don't care and the list has to be the size of the result list.
-search(SearchParameters, _State=#state{results=Results}) ->
-	runSearch(SearchParameters, Results).
-
-runSearch(SearchParameters, Results) ->
-	dict:fold(fun (_Key, {_Row,Value}, Acc) ->
-				case searchValue(SearchParameters, Value) of
-					true ->
-						[Value] ++ Acc;
-					false ->
-						Acc
-				end
- 			end, [], Results).
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%Internal Stuff
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% @doc Take a list of search parameters [val1, '_', val2] and check against a list of results to
-%%      return true if the search parameters match and false otherwise.
-searchValue(SearchParameters, Values) ->
-	
-	SearchList = lists:zipwith(fun(SP,Val) -> match(SP, Val) end, SearchParameters, Values),
-	
-	lists:foldl(fun(Value, Acc) ->
-						case Acc of
-								false ->
-									Acc;
-								true ->
-									Value
-						end
-				end, true, SearchList).
-
-match('_', _Value) ->
-	true;
-
-match(Parameter, Value) when Parameter == Value ->
-	true;
-
-match(_Parameter, _Value) ->
-	false.
-
 %% @doc Run the row query passing in an empty second parameter meaning that we are not matching
 %% 		against any other data in the window
 %% @end
-run_row_query(JSPort, Data, []) ->
-	js:call(JSPort, <<"rowFunction">>, [Data, [], true]);
+run_row_query(Parameters, Join, JSPort, Data, []) ->
+	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], true]);
 
 %% @doc Run the row query in match select mode (looking against old data)
-run_row_query(JSPort, Data, PrevData) ->
-	js:call(JSPort, <<"rowFunction">>, [Data, PrevData, false]).
+run_row_query(Parameters, Join, JSPort, Data, PrevData) ->
+	js:call(JSPort, <<"rowFunction">>, [Parameters, Join,  Data, PrevData, false]).
 
 %% @doc Run the reduce function
 run_reduce_query(JSPort, Results) ->	
@@ -277,43 +243,6 @@ add_match(Matches, Position, _MatchType) ->
 
 remove_match(Matches, Position) ->
 	[lists:delete(Position, X) || X <- Matches].
-
-%% @doc Parse a parameter from an input document.
-parse_parameter(json, Row, Parameter, JSPort) ->
-	%% I hate parsing json in erlang!
-	js:call(JSPort, <<"parseJSON">>, Parameter, Row);
-
-parse_parameter(array, Row, Position, JSPort) ->
-	lists:nth(Position, Row).
-
-create_json_parse_function() ->
-	<<"var parseJSON = function(parameter, row){
-							var myObject = JSON.parse(row);
-
-							for (var key in myObject) {
-  								if(key == parameter){
-    								return(myObject[key]);
-    								break;
-  								}
-							} 
-		">>.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Test Search function
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-create_results_dict() ->
-	dict:store(2, {"", ["Goog", 1.01, 13]}, dict:store(1, {"", ["Goog", 1.00, 12]}, dict:new())).
-
-do_pass_search_test() ->	
-	?assertEqual([["Goog", 1.01, 13], ["Goog", 1.00, 12]], 
-				 	runSearch(["Goog", '_', '_'], create_results_dict())). 
-
-do_pass_search_13_test() ->
-	?assertEqual([["Goog", 1.01, 13]], runSearch(["Goog", '_', 13], create_results_dict())). 
-
-do_pass_search_fail_test() ->
-	?assertEqual([], runSearch(["Goog1", '_', 13], create_results_dict())). 
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 %% Size based window Tests
@@ -333,39 +262,39 @@ do_pass_search_fail_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data_matchRecognise_consecutive_noRestart_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}, {resetStrategy, noRestart}],
-	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function(), [0.50]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-	NewState2 = do_add_data(Json2, NewState),
+	NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
 	
-	NewState3 = do_add_data(Json3, NewState2),
+	NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[0,1,2]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.04", "13"),
 	
-	NewState4 = do_add_data(Json4, NewState3),
+	NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[0,1,2,3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
 	
 	Json5 = create_single_json("1.05", "14"),
 	
-	NewState5 = do_add_data(Json5, NewState4),
+	NewState5 = do_add_data(Json5, NewState4, []),
 	?assertEqual([[1,2,3,0]], NewState5#state.matches),
 	?assertEqual(1, NewState5#state.position),
 	?assertEqual({Json5, [<<"GOOG">>,1.05,14]}, dict:fetch(0, NewState5#state.results)),
@@ -373,7 +302,7 @@ do_add_data_matchRecognise_consecutive_noRestart_test() ->
 	%% Not matched so match list should hold last element
 	Json6 = create_single_json("0.05", "1"),
 	
-	NewState6 = do_add_data(Json6, NewState5),
+	NewState6 = do_add_data(Json6, NewState5, []),
 	?assertEqual([[]], NewState6#state.matches),
 	?assertEqual(2, NewState6#state.position),
 	%% should be empty as initial match failed.
@@ -388,25 +317,25 @@ do_add_data_matchRecognise_consecutive_noRestart_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data_matchRecognise_consecutive_restart_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}],
-	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function(), [0.50]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-	NewState2 = do_add_data(Json2, NewState),
+	NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
 	
-	NewState3 = do_add_data(Json3, NewState2),
+	NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)).
@@ -423,32 +352,32 @@ do_add_data_matchRecognise_consecutive_restart_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data_matchRecognise_consecutive_fail_restart_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}],
-	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function(), [0.50]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-	NewState2 = do_add_data(Json2, NewState),
+	NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("0.99", "9"),
 	
-	NewState3 = do_add_data(Json3, NewState2),
+	NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[2]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,0.99,9]}, dict:fetch(2, NewState3#state.results)),
 
 	Json4 = create_single_json("0.98", "8"),
 	
-	NewState4 = do_add_data(Json4, NewState3),
+	NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,0.98,8]}, dict:fetch(3, NewState4#state.results)).
@@ -466,32 +395,32 @@ do_add_data_matchRecognise_consecutive_fail_restart_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
 do_add_data_matchRecognise_consecutive_fail_restart_then_ok_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}],
-	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function(), [0.50]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-	NewState2 = do_add_data(Json2, NewState),
+	NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("0.99", "9"),
 	
-	NewState3 = do_add_data(Json3, NewState2),
+	NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[2]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,0.99,9]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.07", "19"),
 	
-	NewState4 = do_add_data(Json4, NewState3),
+	NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[2,3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.07,19]}, dict:fetch(3, NewState4#state.results)),
@@ -499,7 +428,7 @@ do_add_data_matchRecognise_consecutive_fail_restart_then_ok_test() ->
 	Json5 = create_single_json("1.08", "20"),
 	
 	%% Query fired and reset so should return empty
-	NewState5 = do_add_data(Json5, NewState4),
+	NewState5 = do_add_data(Json5, NewState4, []),
 	?assertEqual([[]], NewState5#state.matches),
 	?assertEqual(1, NewState5#state.position),
 	?assertEqual({Json5, [<<"GOOG">>,1.08,20]}, dict:fetch(0, NewState5#state.results)).
@@ -514,37 +443,37 @@ do_add_data_matchRecognise_consecutive_fail_restart_then_ok_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 do_add_data_matchRecognise_non_consecutive_fail_restart_then_ok_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}, {consecutive, nonConsecutive}],
-	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function(), [0.50]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-	NewState2 = do_add_data(Json2, NewState),
+	NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	
 	Json3 = create_single_json("0.99", "9"),
 	
-	NewState3 = do_add_data(Json3, NewState2),
+	NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[2],[0,1]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	
 	Json4 = create_single_json("1.07", "19"),
 	
 	%% [0,1,3] should fire
-	NewState4 = do_add_data(Json4, NewState3),
+	NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[2,3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	
 	Json5 = create_single_json("1.08", "20"),
 	
 	%% Query fired and reset so should return empty
-	NewState5 = do_add_data(Json5, NewState4),
+	NewState5 = do_add_data(Json5, NewState4, []),
 	?assertEqual([[]], NewState5#state.matches),
 	?assertEqual(1, NewState5#state.position).
 
@@ -556,30 +485,30 @@ do_add_data_matchRecognise_non_consecutive_fail_restart_then_ok_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data_matchRecognise_non_consecutive_total_fail_restart_then_ok_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}, {consecutive, nonConsecutive}],
-	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function(), [0.50]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-	NewState2 = do_add_data(Json2, NewState),
+	NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	
 	Json3 = create_single_json("0.01", "1"),
 	
-	NewState3 = do_add_data(Json3, NewState2),
+	NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[0,1]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	
 	Json4 = create_single_json("1.07", "19"),
 	
 	%% [0,1,3] should fire
-	NewState4 = do_add_data(Json4, NewState3),
+	NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position).
 
@@ -598,24 +527,24 @@ do_add_data_matchRecognise_non_consecutive_total_fail_restart_then_ok_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data_standard_consecutive_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}],
-	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-    NewState2 = do_add_data(Json2, NewState),
+    NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
-    NewState3 = do_add_data(Json3, NewState2),
+    NewState3 = do_add_data(Json3, NewState2, []),
 	
 	%% Should have fired so now empty
 	?assertEqual([[]], NewState3#state.matches),
@@ -623,21 +552,21 @@ do_add_data_standard_consecutive_test() ->
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.04", "13"),
-    NewState4 = do_add_data(Json4, NewState3),
+    NewState4 = do_add_data(Json4, NewState3, []),
 	
 	?assertEqual([[3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
 	
 	Json5 = create_single_json("1.05", "14"),
-    NewState5 = do_add_data(Json5, NewState4),
+    NewState5 = do_add_data(Json5, NewState4, []),
 	
 	?assertEqual([[3,0]], NewState5#state.matches),
 	?assertEqual(1, NewState5#state.position),
 	?assertEqual({Json5, [<<"GOOG">>,1.05,14]}, dict:fetch(0, NewState5#state.results)),
 	
 	Json6 = create_single_json("1.06", "15"),
-    NewState6 = do_add_data(Json6, NewState5),
+    NewState6 = do_add_data(Json6, NewState5, []),
 	
 	%% Should fire again
 	?assertEqual([[]], NewState6#state.matches),
@@ -645,7 +574,7 @@ do_add_data_standard_consecutive_test() ->
 	?assertEqual({Json6, [<<"GOOG">>,1.06,15]}, dict:fetch(1, NewState6#state.results)),
 	
 	Json7 = create_single_json("1.07", "16"),
-    NewState7 = do_add_data(Json7, NewState6),
+    NewState7 = do_add_data(Json7, NewState6, []),
 	
 	?assertEqual([[2]], NewState7#state.matches),
 	?assertEqual(3, NewState7#state.position),
@@ -653,7 +582,7 @@ do_add_data_standard_consecutive_test() ->
 	
 	%% Should reset as this should not fire
 	Json8 = create_single_json("0.97", "16"),
-    NewState8 = do_add_data(Json8, NewState7),
+    NewState8 = do_add_data(Json8, NewState7, []),
 	
 	?assertEqual([[]], NewState8#state.matches),
 	?assertEqual(0, NewState8#state.position),
@@ -673,24 +602,24 @@ do_add_data_standard_consecutive_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 do_add_data_standard_non_consecutive_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {consecutive, nonConsecutive}],
-	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-    NewState2 = do_add_data(Json2, NewState),
+    NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
-    NewState3 = do_add_data(Json3, NewState2),
+    NewState3 = do_add_data(Json3, NewState2, []),
 	
 	%% Should have fired so now empty
 	?assertEqual([[]], NewState3#state.matches),
@@ -698,21 +627,21 @@ do_add_data_standard_non_consecutive_test() ->
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.04", "13"),
-    NewState4 = do_add_data(Json4, NewState3),
+    NewState4 = do_add_data(Json4, NewState3, []),
 	
 	?assertEqual([[3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
 	
 	Json5 = create_single_json("1.05", "14"),
-    NewState5 = do_add_data(Json5, NewState4),
+    NewState5 = do_add_data(Json5, NewState4, []),
 	
 	?assertEqual([[3,0]], NewState5#state.matches),
 	?assertEqual(1, NewState5#state.position),
 	?assertEqual({Json5, [<<"GOOG">>,1.05,14]}, dict:fetch(0, NewState5#state.results)),
 	
 	Json6 = create_single_json("1.06", "15"),
-    NewState6 = do_add_data(Json6, NewState5),
+    NewState6 = do_add_data(Json6, NewState5, []),
 	
 	%% Should fire again
 	?assertEqual([[]], NewState6#state.matches),
@@ -720,7 +649,7 @@ do_add_data_standard_non_consecutive_test() ->
 	?assertEqual({Json6, [<<"GOOG">>,1.06,15]}, dict:fetch(1, NewState6#state.results)),
 	
 	Json7 = create_single_json("1.07", "16"),
-    NewState7 = do_add_data(Json7, NewState6),
+    NewState7 = do_add_data(Json7, NewState6, []),
 	
 	?assertEqual([[2]], NewState7#state.matches),
 	?assertEqual(3, NewState7#state.position),
@@ -728,7 +657,7 @@ do_add_data_standard_non_consecutive_test() ->
 	
 	%% Should reset as this should not fire
 	Json8 = create_single_json("0.97", "16"),
-    NewState8 = do_add_data(Json8, NewState7),
+    NewState8 = do_add_data(Json8, NewState7, []),
 	
 	?assertEqual([[2]], NewState8#state.matches),
 	?assertEqual(0, NewState8#state.position),
@@ -746,45 +675,45 @@ do_add_data_standard_non_consecutive_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data_standard_non_consecutive_with_window_roll_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {consecutive, nonConsecutive}],
-	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("0.99", "11"),
 	
-    NewState2 = do_add_data(Json2, NewState),
+    NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, []}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
-    NewState3 = do_add_data(Json3, NewState2),
+    NewState3 = do_add_data(Json3, NewState2, []),
 	
 	?assertEqual([[0,2]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("0.99", "13"),
-    NewState4 = do_add_data(Json4, NewState3),
+    NewState4 = do_add_data(Json4, NewState3, []),
 	
 	?assertEqual([[0,2]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, []}, dict:fetch(3, NewState4#state.results)),
 	
 	Json5 = create_single_json("0.99", "14"),
-    NewState5 = do_add_data(Json5, NewState4),
+    NewState5 = do_add_data(Json5, NewState4, []),
 	
 	?assertEqual([[2]], NewState5#state.matches),
 	?assertEqual(1, NewState5#state.position),
 	?assertEqual({Json5, []}, dict:fetch(0, NewState5#state.results)),
 	
 	Json6 = create_single_json("1.06", "15"),
-    NewState6 = do_add_data(Json6, NewState5),
+    NewState6 = do_add_data(Json6, NewState5, []),
 	
 	%% Should fire again
 	?assertEqual([[2,1]], NewState6#state.matches),
@@ -792,7 +721,7 @@ do_add_data_standard_non_consecutive_with_window_roll_test() ->
 	?assertEqual({Json6, [<<"GOOG">>,1.06,15]}, dict:fetch(1, NewState6#state.results)),
 	
 	Json7 = create_single_json("1.07", "16"),
-    NewState7 = do_add_data(Json7, NewState6),
+    NewState7 = do_add_data(Json7, NewState6, []),
 	
 	%% 1,2 as the query fired on pos2 as it was taken out of the window.  So we removed 2 and added it back again.
 	?assertEqual([[1,2]], NewState7#state.matches),
@@ -800,7 +729,7 @@ do_add_data_standard_non_consecutive_with_window_roll_test() ->
 	?assertEqual({Json7, [<<"GOOG">>,1.07,16]}, dict:fetch(2, NewState7#state.results)),
 	
 	Json8 = create_single_json("1.22", "16"),
-    NewState8 = do_add_data(Json8, NewState7),
+    NewState8 = do_add_data(Json8, NewState7, []),
 	
 	?assertEqual([[]], NewState8#state.matches),
 	?assertEqual(0, NewState8#state.position),
@@ -811,39 +740,39 @@ do_add_data_standard_non_consecutive_with_window_roll_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data_standard_consecutive_noRestart_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {resetStrategy, noRestart}],
-	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_match_recognise_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-	NewState2 = do_add_data(Json2, NewState),
+	NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(2, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
 	
-	NewState3 = do_add_data(Json3, NewState2),
+	NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[0,1,2]], NewState3#state.matches),
 	?assertEqual(3, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.04", "13"),
 	
-	NewState4 = do_add_data(Json4, NewState3),
+	NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[0,1,2,3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
 	
 	Json5 = create_single_json("1.05", "14"),
 	
-	NewState5 = do_add_data(Json5, NewState4),
+	NewState5 = do_add_data(Json5, NewState4, []),
 	?assertEqual([[1,2,3,0]], NewState5#state.matches),
 	?assertEqual(1, NewState5#state.position),
 	?assertEqual({Json5, [<<"GOOG">>,1.05,14]}, dict:fetch(0, NewState5#state.results)),
@@ -851,7 +780,7 @@ do_add_data_standard_consecutive_noRestart_test() ->
 	%% Not matched so match list should now be [[]]
 	Json6 = create_single_json("0.05", "1"),
 	
-	NewState6 = do_add_data(Json6, NewState5),
+	NewState6 = do_add_data(Json6, NewState5, []),
 	?assertEqual([[]], NewState6#state.matches),
 	?assertEqual(2, NewState6#state.position),
 	%% should be empty as initial match failed.
@@ -866,21 +795,22 @@ create_single_json(Price, Volume) ->
 	list_to_binary(["{\"symbol\": \"GOOG\",\"price\": ", Price , ",\"volume\": ",  Volume,"}"]).
 
 create_standard_row_function() ->
-	<<"var rowFunction = function(row, otherRow, first){
+	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
 							
 							var myObject = JSON.parse(row);
 							symbol = myObject.symbol;
 							price = myObject.price;
 							volume = myObject.volume;
 
-							if (price > 1.00){
+							// the first parameter is 1.00
+							if (price > parameters[0]){
 								return [symbol, price, volume];
 							}
 							
 							return []}">>.
 
 create_match_recognise_row_function() ->
-	<<"var rowFunction = function(row, otherRow, first){
+	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
 							
 							var myObject = JSON.parse(row);
 
@@ -889,8 +819,8 @@ create_match_recognise_row_function() ->
 							volume = myObject.volume;
 
 							if (first == true){
-
-								if (price > 0.50){
+								// the first parameter is 0.50
+								if (price > parameters[0]){
 									return [symbol, price, volume];
 								}
 
@@ -931,7 +861,7 @@ create_reduce_function() ->
 
 							return 0}">>.
 
-create_initial_state(QueryParameterList, RowFunction, ReduceFunction) ->
+create_initial_state(QueryParameterList, RowFunction, ReduceFunction, Parameters) ->
 	erlang_js:start(),
 
 	{ok, JSPort} = js_driver:new(),
@@ -941,7 +871,7 @@ create_initial_state(QueryParameterList, RowFunction, ReduceFunction) ->
 
 	#state{name = "test", position = 0, results = dict:new(), matches = [[]], rowQuery = create_standard_row_function(), 
 				reduceQuery = create_reduce_function(), queryParameters = query_parameter_api:get_parameters(QueryParameterList), 
-				jsPort = JSPort, pidList = [], sequenceNumber = 0, timingsDict=dict:new()}.
+				jsPort = JSPort, pidList = [], sequenceNumber = 0, timingsDict=dict:new(), parameters = Parameters, searches = []}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc A test that starts everything up and then subscribes this process for
@@ -966,24 +896,24 @@ create_initial_state(QueryParameterList, RowFunction, ReduceFunction) ->
 
 timed_do_add_data_standard_consecutive_test() ->
 	QueryParameters = [{numberOfMatches, 3}, {windowSize, 4}, {windowType, time}],
-	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(0, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 	
 	Json2 = create_single_json("1.02", "11"),
 	
-    NewState2 = do_add_data(Json2, NewState),
+    NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(0, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
-    NewState3 = do_add_data(Json3, NewState2),
+    NewState3 = do_add_data(Json3, NewState2, []),
 	
 	%% Should have fired so now empty
 	?assertEqual([[]], NewState3#state.matches),
@@ -991,21 +921,21 @@ timed_do_add_data_standard_consecutive_test() ->
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.04", "13"),
-    NewState4 = do_add_data(Json4, NewState3),
+    NewState4 = do_add_data(Json4, NewState3, []),
 	
 	?assertEqual([[3]], NewState4#state.matches),
 	?assertEqual(0, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
 	
 	Json5 = create_single_json("1.05", "14"),
-    NewState5 = do_add_data(Json5, NewState4),
+    NewState5 = do_add_data(Json5, NewState4, []),
 	
 	?assertEqual([[3,4]], NewState5#state.matches),
 	?assertEqual(0, NewState5#state.position),
 	?assertEqual({Json5, [<<"GOOG">>,1.05,14]}, dict:fetch(4, NewState5#state.results)),
 	
 	Json6 = create_single_json("1.06", "15"),
-    NewState6 = do_add_data(Json6, NewState5),
+    NewState6 = do_add_data(Json6, NewState5, []),
 	
 	%% Should fire again
 	?assertEqual([[]], NewState6#state.matches),
@@ -1013,7 +943,7 @@ timed_do_add_data_standard_consecutive_test() ->
 	?assertEqual({Json6, [<<"GOOG">>,1.06,15]}, dict:fetch(5, NewState6#state.results)),
 	
 	Json7 = create_single_json("1.07", "16"),
-    NewState7 = do_add_data(Json7, NewState6),
+    NewState7 = do_add_data(Json7, NewState6, []),
 	
 	?assertEqual([[6]], NewState7#state.matches),
 	?assertEqual(0, NewState7#state.position),
@@ -1021,7 +951,7 @@ timed_do_add_data_standard_consecutive_test() ->
 	
 	%% Should reset as this should not fire
 	Json8 = create_single_json("0.97", "16"),
-    NewState8 = do_add_data(Json8, NewState7),
+    NewState8 = do_add_data(Json8, NewState7, []),
 	
 	?assertEqual([[]], NewState8#state.matches),
 	?assertEqual(0, NewState8#state.position),
@@ -1035,11 +965,11 @@ timed_do_add_data_standard_consecutive_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 timed_do_add_data_standard_consecutive_clock_tick_no_fire_test() ->
 	QueryParameters = [{numberOfMatches, 5}, {windowSize, 2}, {windowType, time}],
-	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, InitialState),
+    NewState = do_add_data(Json1, InitialState, []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(0, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
@@ -1048,7 +978,7 @@ timed_do_add_data_standard_consecutive_clock_tick_no_fire_test() ->
 
 	Json2 = create_single_json("1.02", "11"),
 	
-    NewState2 = do_add_data(Json2, clock_tick(NewState)),
+    NewState2 = do_add_data(Json2, clock_tick(NewState), []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(1, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
@@ -1057,7 +987,7 @@ timed_do_add_data_standard_consecutive_clock_tick_no_fire_test() ->
 
 	Json3 = create_single_json("1.03", "12"),
 	
-    NewState3 = do_add_data(Json3, clock_tick(NewState2)),
+    NewState3 = do_add_data(Json3, clock_tick(NewState2), []),
 	?assertEqual([[0,1,2]], NewState3#state.matches),
 	?assertEqual(0, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
@@ -1066,7 +996,7 @@ timed_do_add_data_standard_consecutive_clock_tick_no_fire_test() ->
 
 	Json4 = create_single_json("1.04", "13"),
 	
-    NewState4 = do_add_data(Json4, clock_tick(NewState3)),
+    NewState4 = do_add_data(Json4, clock_tick(NewState3), []),
 	?assertEqual([[1,2,3]], NewState4#state.matches),
 	?assertEqual(1, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
@@ -1087,32 +1017,32 @@ timed_do_add_data_standard_consecutive_clock_tick_no_fire_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 timed_do_add_data_standard_consecutive_clock_tick_no_fire_empty_test() ->
 	QueryParameters = [{numberOfMatches, 5}, {windowSize, 2}, {windowType, time}],
-	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, clock_tick(InitialState)),
+    NewState = do_add_data(Json1, clock_tick(InitialState), []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 
 	Json2 = create_single_json("1.02", "11"),
 	
-    NewState2 = do_add_data(Json2, NewState),
+    NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(1, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
 	
-    NewState3 = do_add_data(Json3, NewState2),
+    NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[0,1,2]], NewState3#state.matches),
 	?assertEqual(1, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.04", "13"),
 	
-    NewState4 = do_add_data(Json4, NewState3),
+    NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[0,1,2,3]], NewState4#state.matches),
 	?assertEqual(1, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
@@ -1140,32 +1070,32 @@ timed_do_add_data_standard_consecutive_clock_tick_no_fire_empty_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 timed_do_add_data_standard_consecutive_clock_tick_fire_test() ->
 	QueryParameters = [{numberOfMatches, 5}, {windowSize, 2}, {windowType, time}],
-	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function()),
+	InitialState = create_initial_state(QueryParameters, create_standard_row_function(), create_reduce_function(), [1.00]),
 	
 	Json1 = create_single_json("1.01", "10"),
 	
-    NewState = do_add_data(Json1, clock_tick(InitialState)),
+    NewState = do_add_data(Json1, clock_tick(InitialState), []),
 	?assertEqual([[0]], NewState#state.matches),
 	?assertEqual(1, NewState#state.position),
 	?assertEqual({Json1, [<<"GOOG">>,1.01,10]}, dict:fetch(0, NewState#state.results)),
 
 	Json2 = create_single_json("1.02", "11"),
 	
-    NewState2 = do_add_data(Json2, NewState),
+    NewState2 = do_add_data(Json2, NewState, []),
 	?assertEqual([[0,1]], NewState2#state.matches),
 	?assertEqual(1, NewState2#state.position),
 	?assertEqual({Json2, [<<"GOOG">>,1.02,11]}, dict:fetch(1, NewState2#state.results)),
 	
 	Json3 = create_single_json("1.03", "12"),
 	
-    NewState3 = do_add_data(Json3, NewState2),
+    NewState3 = do_add_data(Json3, NewState2, []),
 	?assertEqual([[0,1,2]], NewState3#state.matches),
 	?assertEqual(1, NewState3#state.position),
 	?assertEqual({Json3, [<<"GOOG">>,1.03,12]}, dict:fetch(2, NewState3#state.results)),
 	
 	Json4 = create_single_json("1.04", "13"),
 	
-    NewState4 = do_add_data(Json4, NewState3),
+    NewState4 = do_add_data(Json4, NewState3, []),
 	?assertEqual([[0,1,2,3]], NewState4#state.matches),
 	?assertEqual(1, NewState4#state.position),
 	?assertEqual({Json4, [<<"GOOG">>,1.04,13]}, dict:fetch(3, NewState4#state.results)),
