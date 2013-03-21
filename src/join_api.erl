@@ -1,4 +1,25 @@
-%% Author: dan
+%% -------------------------------------------------------------------
+%%
+%% erlang_cep:
+%%
+%% Copyright (c) 2013 Daniel Macklin.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
 -module(join_api).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -45,8 +66,7 @@ produce_results(_FeedName, _WindowName, []) ->
 %% @end 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 produce_results(FeedName, WindowName, Results) ->
-	[FeedName, WindowName, Results].
-
+	[[FeedName, WindowName, Results]].
 
 create_echo_row_function() ->
 	<<"var rowFunction = function(parameters, joins, row, otherRow, first){return [row]}">>.
@@ -89,10 +109,12 @@ standard_end_to_end_3_elements_with_search_test() ->
 
 	Result = search_api:search_window(joinFeedOne, joinWinTwo, ['_'], ok, hardCoded),
 	
-	?assertEqual([[[<<"joinFeedOne">>,<<"joinWinOne">>,
-                               [[0],[2],[1]]]],
-                             [[<<"joinFeedOne">>,<<"joinWinOne">>,[[0],[1]]]],
-                             [[<<"joinFeedOne">>,<<"joinWinOne">>,[[0]]]]], Result).
+	?assertEqual([[[[<<"joinFeedOne">>,<<"joinWinOne">>,
+                                [[0],[2],[1]]]]],
+                             [[[<<"joinFeedOne">>,<<"joinWinOne">>,
+                                [[0],[1]]]]],
+                             [[[<<"joinFeedOne">>,<<"joinWinOne">>,
+                                [[0]]]]]], Result).
 
 join_test_interactive() ->
 	RowFunctionWindow1 = join_api:create_echo_row_function(),

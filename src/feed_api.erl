@@ -1,6 +1,25 @@
-%% Author: dan
-%% Created: 9 Dec 2012
-%% Description: TODO: Add description to feed_api
+%% -------------------------------------------------------------------
+%%
+%% erlang_cep:
+%%
+%% Copyright (c) 2013 Daniel Macklin.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
 -module(feed_api).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -59,7 +78,7 @@ do_add_data(Data, WindowPidsList, SearchDict) ->
 	lists:foreach(fun({WindowName, Pid}) ->
 						  
 						  %% Get any searches for this window and execute them then add to the data
-						  Joins = join_api:run_joins(do_view_searches(SearchDict, WindowName), Data),
+						  Joins = join_api:run_joins(do_view_searches(SearchDict, WindowName), Data), 
 						  gen_server:cast(Pid, {add_data, Data, Joins})
 				  end, WindowPidsList).
 
@@ -67,13 +86,13 @@ do_add_data(Data, WindowPidsList, SearchDict) ->
 %% @doc Add a list of searches to a window within a feed
 %%		Searches are in the format ({feedName, WindowName, [SearchParameters], SearchType}).
 %%
-%%		For example [{testFeed, testWin, ['_', '_', <<"Goog">>], hardCoded}]
+%%		For example [testFeed, testWin, ['_', '_', <<"Goog">>], hardCoded]
 %%		will create a search on the window testWin, on the feed testFeed, where the first two parameters
 %%	  	are wild cards and the third is the String Goog.  
 %%
 %%		N.B. We are not performing any parameter substitution here (i.e pulling a parameter out of a new incoming row).
 %%		
-%%	    Or [{testFeed, testWin, ["Obj.symbol", '_' , "Obj.price"], json}]
+%%	    Or [testFeed, testWin, ["Obj.symbol", '_' , "Obj.price"], json]
 %%		will create a search on window testWin, on the feed testFeed, where the first paramter is the object field of the
 %%		incoming row, the second is a wildcard and the third the price field of the incoming row.  
 %%

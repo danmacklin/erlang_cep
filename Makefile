@@ -4,7 +4,7 @@ REBAR=$(PWD)/rebar
 RETEST=$(PWD)/deps/retest/retest
 
 clean:
-	@rm -rf ebin/*.beam inttest/rt.work rt.work .test
+	@rm -rf ebin/*.beam inttest/rt.work rt.work .test ./rel/erlang_cep/
 
 doc:
 	@./rebar doc skip_deps=true

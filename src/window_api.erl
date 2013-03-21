@@ -1,6 +1,25 @@
-%% Author: dan
-%% Created: 5 Nov 2012
-%% Description: TODO: Add description to sized_window_api
+%% -------------------------------------------------------------------
+%%
+%% erlang_cep:
+%%
+%% Copyright (c) 2013 Daniel Macklin.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
 -module(window_api).
 
 %%
@@ -8,7 +27,13 @@
 %%
 
 -include("window.hrl").
+
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-define(get_js(), "../rel/erlang_cep/js/").
+-else.
+-define(get_js(), "./js/").
+-endif.
 
 %%
 %% Exported Functions
@@ -16,7 +41,7 @@
 -export([add_data/2, do_add_data/3, run_row_query/5, run_reduce_query/2, next_position/3,
 		 subscribe/2, unSubscribe/2, do_subscribe/2, do_unSubscribe/2, is_subscribed/2,
 		 create_json/1, create_standard_row_function/0, create_reduce_function/0, create_single_json/2,
-		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2]).
+		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2, import_js/1]).
 		 %%add_searches/2, view_searches/1, remove_searches/2]).
 %%
 %% API Functions
@@ -130,8 +155,7 @@ do_add_data(Row, State=#state{results=Results,
 							  queryParameters={_NumberOfMatches, WindowSize, size, Consecutive, MatchType, _ResetStrategy} = QueryParameters,
 							  jsPort=JSPort,
 							  parameters = Parameters,
-							  pidList=PidList,
-							  name = Name}, Joins) ->
+							  pidList=PidList}, Joins) ->
 		
 	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, []),
 		
@@ -213,6 +237,17 @@ next_position(OldPosition, _WindowSize, _) ->
 %%Internal Stuff
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @ doc Import any javascripts within the js directory
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+import_js(JSPort) ->
+	{ok, FileList} = file:list_dir(?get_js()),
+	[import_file(F, JSPort) || F <- FileList].
+
+import_file(File, JSPort) ->
+	 ok = js_driver:define_js(JSPort, {file, string:concat(?get_js(), File)}, 5000).
+
 %% @doc Run the row query passing in an empty second parameter meaning that we are not matching
 %% 		against any other data in the window
 %% @end
@@ -243,10 +278,100 @@ add_match(Matches, Position, _MatchType) ->
 
 remove_match(Matches, Position) ->
 	[lists:delete(Position, X) || X <- Matches].
+
+create_json(Data) ->
+	lists:foldl(fun({Price, Volume}, Acc) -> 
+					[create_single_json(Price, Volume) | Acc]
+				end, [], lists:reverse(Data)).
+
+create_single_json(Price, Volume) ->
+	list_to_binary(["{\"symbol\": \"GOOG\",\"price\": ", Price , ",\"volume\": ",  Volume,"}"]).
+
+create_standard_row_function() ->
+	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
+							
+							var myObject = JSON.parse(row);
+							symbol = myObject.symbol;
+							price = myObject.price;
+							volume = myObject.volume;
+
+							// the first parameter is 1.00
+							if (price > parameters[0]){
+								return [symbol, price, volume];
+							}
+							
+							return []}">>.
+
+create_match_recognise_row_function() ->
+	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
+							
+							var myObject = JSON.parse(row);
+
+							symbol = myObject.symbol;
+							price = myObject.price;
+							volume = myObject.volume;
+
+							if (first == true){
+								// the first parameter is 0.50
+								if (price > parameters[0]){
+									return [symbol, price, volume];
+								}
+
+								else{
+									return [];
+								}
+							}
+
+							else{
+		
+								var prevObject = JSON.parse(otherRow);								
+
+								if (volume > prevObject.volume){
+									return true;
+								}
+
+								else{
+									return false;
+								}
+							}
+							
+						}">>.
+
+create_reduce_function() ->
+	<<"var reduceFunction = function(matches){
+							var sum = 0;
+
+							for(var i=0; i<matches.length; i++) {
+								var match = matches[i];
+								sum += match[2];
+							}
+
+							if (sum > 0){
+								return sum / matches.length;
+							}
+
+							
+
+							return 0}">>.
+
+create_initial_state(QueryParameterList, RowFunction, ReduceFunction, Parameters) ->
+	erlang_js:start(),
+
+	{ok, JSPort} = js_driver:new(),
+	
+	js:define(JSPort, RowFunction),
+	js:define(JSPort, ReduceFunction),
+
+	#state{name = "test", position = 0, results = dict:new(), matches = [[]], rowQuery = create_standard_row_function(), 
+				reduceQuery = create_reduce_function(), queryParameters = query_parameter_api:get_parameters(QueryParameterList), 
+				jsPort = JSPort, pidList = [], sequenceNumber = 0, timingsDict=dict:new(), parameters = Parameters, searches = []}.
+
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 %% Size based window Tests
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-ifdef(TEST).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc A Test that starts a consecutive match recognise window which does not
@@ -786,92 +911,6 @@ do_add_data_standard_consecutive_noRestart_test() ->
 	%% should be empty as initial match failed.
 	?assertEqual({Json6, []}, dict:fetch(1, NewState6#state.results)).
 
-create_json(Data) ->
-	lists:foldl(fun({Price, Volume}, Acc) -> 
-					[create_single_json(Price, Volume) | Acc]
-				end, [], lists:reverse(Data)).
-
-create_single_json(Price, Volume) ->
-	list_to_binary(["{\"symbol\": \"GOOG\",\"price\": ", Price , ",\"volume\": ",  Volume,"}"]).
-
-create_standard_row_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
-							
-							var myObject = JSON.parse(row);
-							symbol = myObject.symbol;
-							price = myObject.price;
-							volume = myObject.volume;
-
-							// the first parameter is 1.00
-							if (price > parameters[0]){
-								return [symbol, price, volume];
-							}
-							
-							return []}">>.
-
-create_match_recognise_row_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
-							
-							var myObject = JSON.parse(row);
-
-							symbol = myObject.symbol;
-							price = myObject.price;
-							volume = myObject.volume;
-
-							if (first == true){
-								// the first parameter is 0.50
-								if (price > parameters[0]){
-									return [symbol, price, volume];
-								}
-
-								else{
-									return [];
-								}
-							}
-
-							else{
-		
-								var prevObject = JSON.parse(otherRow);								
-
-								if (volume > prevObject.volume){
-									return true;
-								}
-
-								else{
-									return false;
-								}
-							}
-							
-						}">>.
-
-create_reduce_function() ->
-	<<"var reduceFunction = function(matches){
-							var sum = 0;
-
-							for(var i=0; i<matches.length; i++) {
-								var match = matches[i];
-								sum += match[2];
-							}
-
-							if (sum > 0){
-								return sum / matches.length;
-							}
-
-							
-
-							return 0}">>.
-
-create_initial_state(QueryParameterList, RowFunction, ReduceFunction, Parameters) ->
-	erlang_js:start(),
-
-	{ok, JSPort} = js_driver:new(),
-	
-	js:define(JSPort, RowFunction),
-	js:define(JSPort, ReduceFunction),
-
-	#state{name = "test", position = 0, results = dict:new(), matches = [[]], rowQuery = create_standard_row_function(), 
-				reduceQuery = create_reduce_function(), queryParameters = query_parameter_api:get_parameters(QueryParameterList), 
-				jsPort = JSPort, pidList = [], sequenceNumber = 0, timingsDict=dict:new(), parameters = Parameters, searches = []}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc A test that starts everything up and then subscribes this process for
@@ -1122,3 +1161,5 @@ timed_do_add_data_standard_consecutive_clock_tick_fire_test() ->
 	NewState8 = clock_tick(NewState7),
 	?assertEqual([[]], NewState8#state.matches),
 	?assertEqual(0, dict:size(NewState8#state.results)).
+
+-endif.

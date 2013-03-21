@@ -1,24 +1,25 @@
-#erlang_cep v0.1 Beta 30/01/2013
+#erlang_cep v0.1 Beta 22/03/2013
 
 A very simple Complex Event Processing (CEP) engine written in erlang OTP inspired by esper and CouchDB. 
 
 Erlang CEP facilitates the creation of one or many feeds, each with one or many windows.  
 
-A window is a programable entity that is used to look for patterns in data.  Windows are highly configurable
-but are normally time or size based.  Once a pattern has been found, the window fires and sends configurable
+A window is a programmable entity that is used to look for patterns in data.  Windows are highly configurable
+and are normally time or size based.  Once a pattern has been found, the window fires and sends
 messages to one or many interested processes.
 
 Each window has two javascript functions.  
 
-The Row Function runs every time a new item of data is applied to a window.
-It is used as a filter, only allowing data that matches predefined rules to be added to the window.  Depending on the
-complexity of the Row Function this could be a simple hard coded test, or a complex match function that compares new data
-to existing data looking for a specific pattern.
+The Row Function runs every time a new piece of data is added to a window.
+It is used as a filter, making sure that only data which matches predefined rules is added to the window.  Depending on the
+complexity of the Row Function this could be a simple hard coded test i.e. ipAddress=="127.0.0.1" , or a complex match 
+function that compares new data to existing data looking for a specific pattern. For example lets say that we
+are looking for stock that started of with a sales volume of 10 units where the sales volume increases by one each time.
 
-The Reduce Function runs every time a pattern is found.  It is used to aggregate data.  For example lets say that we
+The Reduce Function runs each time a pattern is found.  It is used to aggregate data.  For example lets say that we
 wanted to create a stock trade window that stores holds all of the trades with a value of £10 or more over the last
 minute.  Every time we get a sequence of five trades where the price increases by £1 each time we want our query
-to fire.  The Reduce Function itterates over all of the values that have matched the pattern and can be used to
+to fire.  The Reduce Function iterates over all of the values that have matched the pattern and is used to
 run logic that aggregates the results.
 
 ##How Does it Work?
@@ -32,9 +33,11 @@ A Window is a CEP rule that is applied to a Feed.
 
 Each Window implements a Row and Reduce Function in javascript.  
 
-The Row Function is used to match rows.  The Reduce Function is used to aggregate matched rows.
+The Row Function is used to match rows making sure that only data which matches is added to the window.  
 
-A good example would be a Stock Market Data Feed, where a Row Function would be used to match stock for
+The Reduce Function is used to aggregate matched rows.
+
+A good example would be a Stock Market Data Feed. A Row Function would be used to match stock for
 a particular symbol, price and volume.  The Reduce Function might then be used to calculate
 the average sale price of all matched items.
 
@@ -113,10 +116,13 @@ This is an example of a standard Row Function which will match if the price is g
     							
     							return []}">>.
 							
+N.B to debug a javascript function add ejsLog("/tmp/foo.txt", "Hello"); to your javascript.
+
+
 The Row Function takes in five parameters :-
 
 1. parameters - A list of parameters that are passed into the rowFunction.  Can be useful for when you want to pass some filters into your row function i.e. if (price > parameters[0]) rather than if (price > 1.00)
-2. joins - A list of joined data where each row in the list represents a join.  [ [FeedName, WindowName, [ Joined Rows ]] ]
+2. joins - A list of joined data where each row in the list represents a join.  [ [FeedName, WindowName, [ Joined Rows ]] ].  Each joined row is a list of one or more elements.
 3. row - A String holding the new json document to be matched (I refer to this as a Row).
 4. otherRow - A string holding the json data from the last / previous match.
 5. first - A boolean value set to true if this is an initial row check, false if this is checking the new row against previous values.
@@ -129,10 +135,34 @@ it is used within Reduce Functions to generate aggregate values if the window fi
 
 If the Row Function fails to match it must return an empty list.
 
+N.B I have started to write an API which makes searching for parameters within joins a little more straightforwards.
+
+To use the API create a Join object passing in the join parameter of your row function.  var j = new Join(joins);
+
+The API includes the following functions :-
+
+1. exists(value, position) - Search the joins array looking for value within results position 0.  Remember that when a row function returns it returns an array of one or many values.  The position parameter looks for a value in the specified position.  
+2. TODO - exists(value) - Search every position on the joins array for value.
+3. TODO - exists(value, position, feedName, windowName)
+4. TODo - exisits(value,feedName, windowName)
+
+Here is an example.
+
+	var rowFunction = function(parameters, joins, row, otherRow, first){
+		var j = new Join(joins);
+
+		if (j.exists(parameters[0], 0)){
+			return [\"Yes\"];
+		}
+		
+	return [\"Nope\"]}
+
+It returns Yes if it finds the value of parameters[0] at position 0 it returns Yes.
+
 ###A MatchRecognise Row Function
 
-Next is an example of a matchRecognise Row Function.  MatchRecognise Functions can be called twice, once to check that new row data passes an initial
-match, then again to check new row data against previous matches.
+MatchRecognise Functions are used to find complex patterns in data.  Typically they are called twice, once to check that new row data passes an initial
+threshold, then again to check new row data against previous matches.
 
 When first is set to true this function is being called within the context of an initial match check.
 
@@ -177,9 +207,9 @@ The function takes in three parameters :-
 
 1. parameters - A list of parameters that are passed into the rowFunction.  Can be useful for when you want to pass some filters into your row function i.e. if (price > parameters[0]) rather than if (price > 1.00)
 2. joins - A list of joined data where each row in the list represents a join.  [ [FeedName, WindowName, [ Joined Rows ]] ]
-3. row 		- A String holding the new json document.
+3. row 	- A String holding the new json document.
 4. otherRow - A string holding the json data from the last / previous match.
-5. first 	- A boolean value set to true when this function is called from the context of an initial check, and false when called in the context of matchRecognise.
+5. first - A boolean value set to true when this function is called from the context of an initial check, and false when called in the context of matchRecognise.
            	  
 The initial check code (first = true) is very similar to the standard Row Function returning an array of values if the row matches, and an empty list if
 it fails.
@@ -199,18 +229,18 @@ For example :-
     [["Goog", 2.00, 20], ["Goog", 2.01, 21]]
 
     <<"var reduceFunction = function(matches){
-	    						var sum = 0;
+	    					var sum = 0;
      
-    							for(var i=0; i<matches.length; i++) {
-    								var match = matches[i];
-    								sum += match[2];
-    							}
+    						for(var i=0; i<matches.length; i++) {
+    							var match = matches[i];
+    							sum += match[2];
+    						}
     
-    							if (sum > 0){
-    								return sum / matches.length;
-    							}
+   						if (sum > 0){
+   							return sum / matches.length;
+    						}
     
-    							return 0}">>.
+    						return 0}">>.
 							
 The Reduce Function can then return any value back to the CEP system.  In this example the volume attribute (the 3rd element in arrays returned from the Row Functions)
 is extracted and used to create an average volume.
@@ -356,6 +386,8 @@ Start the application
 
     make run
 
+N.B Make sure that you run make deploy before running make test!
+
 
 ##TODO
 
@@ -370,3 +402,11 @@ Please note that this is a very early beta release, and I'm quite new to erlang.
 7. Test, test and test again
 8. Some more stress tests.
 9. My MatchRecognise queries are very basic.  Add more functionality.
+10. Use Lexx and Yacc to create a DSL to decsribe Windows and patterns. 
+11. Each window currently has its own Javascript VM.  As the number of VM's increases this could cause issues.
+
+##Licence
+
+This software is open source.  It is licensed under the Apache 2 license.  Please feel free to email me at danmacklin10 at gmail.com if you have any issues or suggestions.
+
+http://www.apache.org/licenses/LICENSE-2.0

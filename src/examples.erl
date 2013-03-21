@@ -1,3 +1,25 @@
+%% -------------------------------------------------------------------
+%%
+%% erlang_cep:
+%%
+%% Copyright (c) 2013 Daniel Macklin.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
 -module(examples).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -7,7 +29,7 @@
 %%
 %% Exported Functions
 %%
--export([every_window/0, create_single_sales_json/3, receive_message/2]).
+-export([every_window/0, create_single_sales_json/3, receive_message/2, join_window/0, create_join_window_dan_match_function/0, create_join_window_match_function/0]).
 %%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -44,7 +66,7 @@ receive_message(Pid, No) when No =< 10 ->
 			receive_message(Pid, No + 1)
 	end;
 	
-receive_message(Pid, No) ->
+receive_message(_Pid, _No) ->
 							 ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -124,3 +146,62 @@ create_every_reduce_function() ->
 							}
 
 							return [averageUnitSalePrice, averageVolume]}">>.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @doc A join example Create one size based window with the value "dan" stored within it.
+%% 		Create a second window that will add the value join if the value "dan" is found
+%% 		within the first window.  Note that this example does not need a reduce function
+%%		normally this would not be the case.
+%% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create_join_window_dan_match_function() ->
+	<<"var rowFunction = function(parameters, joins, row, otherRow, first){ return [ \"Dan\" ]}">>.
+
+create_join_window_match_function() ->
+	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
+							var j = new Join(joins);
+
+							ejsLog(\"/tmp/foo.txt\", j.exists(parameters[0], 0));
+
+							if (j.exists(parameters[0], 0)){
+								return [\"Join\"];
+							}
+		
+							return [\"Nope\"]}
+	">>.
+
+join_window() ->
+	QueryParameterList = [{numberOfMatches, 4}, {windowSize, 4}],
+	
+	feed_api:start_feed(jFeed),
+	feed_api:start_feed(jFeed2),
+	feed_api:start_feed(jFeed3),
+	
+	feed_api:start_window(jf1Win, jFeed, examples:create_join_window_dan_match_function(), <<"">>, QueryParameterList, []),
+	feed_api:start_window(jf2Win, jFeed2, examples:create_join_window_dan_match_function(), <<"">>, QueryParameterList, []),
+	feed_api:start_window(jf3Win, jFeed3, examples:create_join_window_match_function(), <<"">>, QueryParameterList, [<<"Dan">>]),
+	
+	Search = [[jFeed, jf1Win, [<<"Dan">>], hardCoded],[jFeed2, jf2Win, [<<"Dan">>], hardCoded]],
+	
+	feed_api:add_searches(jFeed3,jf3Win,Search),
+	
+	%% Add some data
+	feed_api:add_data(jFeed, "d"),
+	feed_api:add_data(jFeed2, "d"),
+	feed_api:add_data(jFeed3, "d"),
+
+	%% Now do a search over jfWin3 answer should be <<"Join">>  as Dan should be found in jf1Win and jf2Win
+	io:format("Search results = ~p ~n", [search_api:search_window(jFeed3, jf3Win, ['_'], ok, hardCoded)]),
+	
+	%% Add another search
+	Search2 = [[jFeed, jf1Win, [<<"Gemma">>], hardCoded]],
+	feed_api:add_searches(jFeed3,jf3Win,Search2),
+	
+	%% Join search should now have 3 elements
+	io:format("Searches should now have 3 elements ~p ~n", [feed_api:view_searches(jFeed3,jf3Win)]),
+	
+	feed_api:add_data(jFeed, "e"),
+	
+	%% Do another search results should be "Dan and Nope"
+	io:format("~p ~n", search_api:search_window(jFeed2, jf2Win, ['_'], ok, hardCoded)).
