@@ -28,6 +28,7 @@
 %% --------------------------------------------------------------------
 
 -include ("window.hrl").
+-include_lib("cep_logger.hrl").
 
 %% --------------------------------------------------------------------
 %% External exports
@@ -37,15 +38,6 @@
 -export([init/1, start_link/5, handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
 		 code_change/3]).
 
-%% ====================================================================
-%% External functions
-%% ====================================================================
-
-
-%% ====================================================================
-%% Server functions
-%% ====================================================================
-
 %% --------------------------------------------------------------------
 %% Function: init/1
 %% Description: Initiates the server
@@ -54,7 +46,8 @@
 %%          ignore               |
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
-init([Name, RowQuery, ReduceQuery, QueryParameters, Parameters]) ->
+init([Name, RowQuery, ReduceQuery, QueryParameters, Parameters]) ->	
+	?INFO("Starting window Name:~s Pid:~p", [Name, self()]),
 
 	{_NumberOfMatches, _WindowSize, WindowType, _Consecutive, _MatchType, _ResetStrategy} = QueryParameters,
 	{ok, JSPort} = js_driver:new(),
@@ -107,7 +100,7 @@ handle_call({search, SearchParameter}, _From, State) ->
 	{reply, search_api:search(SearchParameter, State), State};
 
 handle_call(Request, _From, State) ->
-	io:format("Unexpected call message ~p ~n", [Request]),
+	?ERROR("Unexpected call message ~p", [Request]),
     Reply = ok,
     {reply, Reply, State}.
 
@@ -131,18 +124,18 @@ handle_cast({addSearches, NewSearches}, State = #state{searches = Searches})->
 	{noreply, State#state{searches=lists:append(NewSearches, Searches)}};
 
 handle_cast({removeSearches, RemoveSearches}, State = #state{searches = Searches})->
-	
 	NewSearches = lists:foldl(fun(Element, Acc) ->
 									  lists:delete(Element, Acc)
 							  end, Searches, RemoveSearches),
 	
 	{noreply, State#state{searches = NewSearches}};
 
-handle_cast({stop}, State) ->
+handle_cast({stop}, State = #state{name = Name}) ->
+	?INFO("Stopping window ~p", [Name]),
     {stop, normal, State};
 
 handle_cast(Msg, State) ->
-	io:format("Unexpected cast message ~p ~n", [Msg]),
+	?ERROR("Unexpected cast message ~p", [Msg]),
     {noreply, State}.
 
 %% --------------------------------------------------------------------
@@ -163,7 +156,7 @@ handle_info(tick, State) ->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 terminate(Reason, State) ->
-	io:format("window shutting down : ~p ~p ~n", [State#state.name, Reason]),
+	?INFO("window shutting down : ~p ~p", [State#state.name, Reason]),
     ok.
 
 %% --------------------------------------------------------------------
@@ -173,7 +166,3 @@ terminate(Reason, State) ->
 %% --------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-%% --------------------------------------------------------------------
-%%% Internal functions
-%% --------------------------------------------------------------------

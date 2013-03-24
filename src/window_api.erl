@@ -27,7 +27,9 @@
 %%
 
 -include("window.hrl").
+-include_lib("cep_logger.hrl").
 
+%% Set the relative file location for loading the javascript files for eunit and production configs
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -define(get_js(), "../rel/erlang_cep/js/").
@@ -42,42 +44,21 @@
 		 subscribe/2, unSubscribe/2, do_subscribe/2, do_unSubscribe/2, is_subscribed/2,
 		 create_json/1, create_standard_row_function/0, create_reduce_function/0, create_single_json/2,
 		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2, import_js/1]).
-		 %%add_searches/2, view_searches/1, remove_searches/2]).
+
 %%
 %% API Functions
 %%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% @doc	Each Window stores a list of the searches that are
-%%      used to join with other windows.
-%%		This function is used to add a list of searches to this list.
-%% @end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%add_searches(WindowName, Searches) ->
-%%  [{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
-%%  ok = gen_server:cast(WindowPid, {addSearches, Searches}).
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% @doc Return all of the searches applied to a window
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%view_searches(WindowName) ->
-%%	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
-%%	{ok, SearchList} = gen_server:call(WindowPid, {getSearches}),
-%%	SearchList.	
-
-%%remove_searches(WindowName, Searches) ->
-%%	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
-%%  	ok = gen_server:cast(WindowPid, {removeSearches, Searches}).
 	
 generate_tick(Delay, Process) ->
 	receive
 		tick ->
 			Process ! tick,
+			?DEBUG("Generating tick for ~p", [Process]),
 			erlang:send_after(Delay, self(), tick);
 		Error ->
-			io:format("Got error ~p ~n", [Error])
+			?ERROR("Got error generating tick for ~p ~p", [Error, Process])
 	after 2000 ->
-			io:format("after 2000 ~n")
+			?ERROR("Timeout after 2000")
 	end,
 	generate_tick(Delay, Process).
 			
@@ -120,7 +101,10 @@ clock_tick(State=#state{results=ResultsDict,
 						queryParameters={NumberOfMatches, WindowSize, time, _Consecutive, MatchType, ResetStrategy},
 						jsPort=JSPort,
 						pidList = PidList,
-						timingsDict = TimingsDict}) ->
+						timingsDict = TimingsDict,
+						name = Name}) ->
+	
+	?DEBUG("Ticking clock for Name:~p Position:~p Matches:~p PidList:~p", [Name, Position, MatchList, PidList]),
 	
 	%% Not the cleanest code in the world.  New Position stores the second within the window.
     %% This needs to roll around hence passing in the size parameter.
@@ -155,7 +139,10 @@ do_add_data(Row, State=#state{results=Results,
 							  queryParameters={_NumberOfMatches, WindowSize, size, Consecutive, MatchType, _ResetStrategy} = QueryParameters,
 							  jsPort=JSPort,
 							  parameters = Parameters,
-							  pidList=PidList}, Joins) ->
+							  pidList=PidList,
+							  name = Name}, Joins) ->
+	
+	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
 		
 	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, []),
 		
@@ -192,14 +179,14 @@ do_add_data(Row, State=#state{results=Results,
 							  jsPort=JSPort,
 							  pidList=PidList,
 							  sequenceNumber=SequenceNumber,
-							  parameters = Parameters,
-							  %%searches = Searches,
-							  timingsDict=TimingsDict}, Joins) ->
+							  parameters=Parameters,
+							  timingsDict=TimingsDict,
+							  name=Name}, Joins) ->
+	
+	?DEBUG("Do_add_data for time based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
 		
 	Now = os:timestamp(),
 	NewSequenceNumber = SequenceNumber + 1,
-	
-	%%Joins = join_api:run_joins(Searches, Row),
 	
 	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, []),
 			
@@ -248,18 +235,23 @@ import_js(JSPort) ->
 import_file(File, JSPort) ->
 	 ok = js_driver:define_js(JSPort, {file, string:concat(?get_js(), File)}, 5000).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Run the row query passing in an empty second parameter meaning that we are not matching
 %% 		against any other data in the window
 %% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 run_row_query(Parameters, Join, JSPort, Data, []) ->
+	?DEBUG("Running basic row query Parameters:~p Join:~p Data:~p ", [Parameters, Join, Data]),
 	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], true]);
 
 %% @doc Run the row query in match select mode (looking against old data)
 run_row_query(Parameters, Join, JSPort, Data, PrevData) ->
+	?DEBUG("Running select row query Parameters:~p Join:~p Data:~p PrevData:~p", [Parameters, Join, Data, PrevData]),
 	js:call(JSPort, <<"rowFunction">>, [Parameters, Join,  Data, PrevData, false]).
 
 %% @doc Run the reduce function
 run_reduce_query(JSPort, Results) ->	
+	?DEBUG("Running reduce query Results:~p ", [Results]),
 	js:call(JSPort, <<"reduceFunction">>, Results).
 
 %% @doc Add to results dictionary

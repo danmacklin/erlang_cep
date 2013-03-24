@@ -22,11 +22,12 @@
 
 -module(feed_api).
 
--include_lib("eunit/include/eunit.hrl").
-
 %%
 %% Include files
 %%
+
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("cep_logger.hrl").
 
 %%
 %% Exported Functions
@@ -79,6 +80,7 @@ do_add_data(Data, WindowPidsList, SearchDict) ->
 						  
 						  %% Get any searches for this window and execute them then add to the data
 						  Joins = join_api:run_joins(do_view_searches(SearchDict, WindowName), Data), 
+						  ?DEBUG("do_add_data WindowName: ~p Joins: ~p", [WindowName, Joins]),
 						  gen_server:cast(Pid, {add_data, Data, Joins})
 				  end, WindowPidsList).
 
@@ -123,6 +125,7 @@ do_view_searches(SearchDict, WindowName) ->
 		error ->
 			[];
 		{ok, Value} ->
+			?DEBUG("do_view_searches WindowName: ~p Search: ~p", [WindowName, Value]),
 			Value
 	end.
 

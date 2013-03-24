@@ -28,6 +28,7 @@
 %% --------------------------------------------------------------------
 
 -include("feed.hrl").
+-include_lib("cep_logger.hrl").
 
 %% --------------------------------------------------------------------
 %% External exports
@@ -53,7 +54,7 @@
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([Name]) ->
-	%%io:format("Starting feed_gen_server ~p ~n", [Name]),
+	?INFO("Starting feed_gen_server ~p ~n", [Name]),
     {ok, #feedState{name=Name, windowPids=[], searchDict=dict:new()}}.
 
 start_link(Name) -> 
@@ -79,7 +80,6 @@ handle_call({search, WindowName, SearchParameter}, _From, State) ->
 	{reply, search_api:do_search(WindowName, SearchParameter), State};
 
 handle_call({viewSearches, WindowName}, _From, State=#feedState{searchDict=SearchDict}) ->
-	%%{reply, window_api:view_searches(WindowName), State};
 	{reply, feed_api:do_view_searches(SearchDict, WindowName), State};
 
 handle_call(_Request, _From, State) ->
@@ -119,11 +119,9 @@ handle_cast({subscribe, WindowName, Pid}, State) ->
 	{noreply, State};
 
 handle_cast({addSearches, WindowName, Searches}, State=#feedState{searchDict=SearchDict}) ->
-	%%window_api:add_searches(WindowName, Searches),
 	{noreply, State#feedState{searchDict=feed_api:do_add_searches(SearchDict, WindowName, Searches)}};
 
 handle_cast({removeSearches, WindowName, Searches}, State=#feedState{searchDict=SearchDict}) ->
-	%%window_api:remove_searches(WindowName, Searches),
 	{noreply, State#feedState{searchDict=feed_api:do_remove_searches(WindowName, Searches, SearchDict)}};
 	
 handle_cast(_Msg, State) ->
@@ -145,7 +143,7 @@ handle_info(Info, State) ->
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
 terminate(Reason, State) ->
-	%%io:format("feed_genserver_terminating ~p ~n", [self()]),
+	?INFO("Starting feed_gen_server terminating ~p ~n", [State#feedState.name]),
     ok.
 
 %% --------------------------------------------------------------------

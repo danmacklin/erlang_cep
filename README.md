@@ -1,45 +1,34 @@
 #erlang_cep v0.1 Beta 22/03/2013
 
-A very simple Complex Event Processing (CEP) engine written in erlang OTP inspired by esper and CouchDB. 
+A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by esper and CouchDB. 
 
-Erlang CEP facilitates the creation of one or many feeds, each with one or many windows.  
+Erlang CEP facilitates the creation of one or many feeds, each with one or many time or size based windows.
 
-A window is a programmable entity that is used to look for patterns in data.  Windows are highly configurable
-and are normally time or size based.  Once a pattern has been found, the window fires and sends
-messages to one or many interested processes.
+Each window can be programmed to look for patterns within it's data.  Once a pattern is found the data is aggregated and
+distributed to other processes via publish and subscribe.
 
-Each window has two javascript functions.  
+Unlike many CEP systems which have their own custom DSL's erlang_cep can be programmed with two javascript functions (inspired by couchDB).  
 
-The Row Function runs every time a new piece of data is added to a window.
-It is used as a filter, making sure that only data which matches predefined rules is added to the window.  Depending on the
-complexity of the Row Function this could be a simple hard coded test i.e. ipAddress=="127.0.0.1" , or a complex match 
-function that compares new data to existing data looking for a specific pattern. For example lets say that we
-are looking for stock that started of with a sales volume of 10 units where the sales volume increases by one each time.
-
-The Reduce Function runs each time a pattern is found.  It is used to aggregate data.  For example lets say that we
-wanted to create a stock trade window that stores holds all of the trades with a value of £10 or more over the last
-minute.  Every time we get a sequence of five trades where the price increases by £1 each time we want our query
-to fire.  The Reduce Function iterates over all of the values that have matched the pattern and is used to
-run logic that aggregates the results.
+The system is designed to offer highly concurrent processing as each feed and window run in seperate gen_server processes.
 
 ##How Does it Work?
 
-The erlang_cep feed_api facilitates the creation of Feeds and Windows where a Feed can
-have zero or many Windows. 
+The feed_api can be used to create Feeds and Windows.  Each feed can have one or many windows.
 
-A Feed is a stream of json encoded data (other formats should be possible).
+A Feed is a stream of json encoded data (other formats are possible).
 
-A Window is a CEP rule that is applied to a Feed.
+A Window is a data storage abstraction with an embedded CEP rule that is applied to a Feed.
 
 Each Window implements a Row and Reduce Function in javascript.  
 
-The Row Function is used to match rows making sure that only data which matches is added to the window.  
+The Row Function makes sure that only data which matches the CEP rule is added to the window.  
 
 The Reduce Function is used to aggregate matched rows.
 
-A good example would be a Stock Market Data Feed. A Row Function would be used to match stock for
-a particular symbol, price and volume.  The Reduce Function might then be used to calculate
-the average sale price of all matched items.
+A good example is a Stock Market Feed where the Row Function would match stock data for a particular symbol.  
+The Window configuration (with some help from the Row FUnction) would apply a CEP rule.  The Reduce 
+Function would fire and aggregate the data if the Windows CEP rule matched.  Finally a publish and subscribe mechanism
+would distribute the data to interested processes.
 
 ##Query Types
 
@@ -363,6 +352,7 @@ See examples.erl.
 
 1. Spider Monkey
 2. erlang_js
+3. lager - An erlang logging framework
 
 ##Compilation / run Instructions
 
@@ -388,22 +378,26 @@ Start the application
 
 N.B Make sure that you run make deploy before running make test!
 
+##Logging / working out what has gone wrong.
+
+I have included the excellent lager logging framework from Basho.  You can change the logging levels by modifying
+the sys.config settings within the rel/files directory. By default the logs are outputted to the 
+/erlang_cep/rel/erlang_cep/log directory.
 
 ##TODO
 
 Please note that this is a very early beta release, and I'm quite new to erlang..........
 
-1. Implement every queries for standard windows.
-2. Look at failure scenarios.  Currently subscriptions will not survive process failures.
-3. Implement more advanced CEP algorithms such as Rete
-4. Work out how to join windows.
-5. Use Mnesia to try to make windows HA.
-6. Write a web based UI to allow users to create feeds and view results.
-7. Test, test and test again
-8. Some more stress tests.
-9. My MatchRecognise queries are very basic.  Add more functionality.
-10. Use Lexx and Yacc to create a DSL to decsribe Windows and patterns. 
-11. Each window currently has its own Javascript VM.  As the number of VM's increases this could cause issues.
+1. Implement every queries for standard windows, currently this functionality is only available for timed windows.
+2. Look at failure scenarios.  Subscriptions and some config will not survive window process failures.
+3. Implement more advanced CEP algorithms such as Rete.
+4. Use Mnesia to try to make windows HA.
+5. Write a web based UI to allow users to create feeds and view results.
+6. Test, test and test again
+7. Some more stress tests.
+8. My MatchRecognise queries are very basic.  Add more functionality.
+9. Use Lexx and Yacc to create a DSL to decsribe Windows and patterns. 
+10. Each window currently has its own Javascript VM.  As the number of VM's increases this could cause issues.
 
 ##Licence
 
