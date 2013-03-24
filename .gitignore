@@ -161,3 +161,15 @@ pip-log.txt
 
 # Mac crap
 .DS_Store
+
+#############
+## Erlang
+#############
+
+.eunit
+doc
+deps
+*.o
+*.beam
+*.plt
+erl_crash.dump
