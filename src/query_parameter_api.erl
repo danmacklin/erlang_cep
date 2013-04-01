@@ -25,7 +25,11 @@
 %%
 %% Include files
 %%
+
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %%
 %% Exported Functions
 %%
@@ -156,6 +160,9 @@ get_parameter(ParameterList, ParameterName) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Tests
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-ifdef(TEST).
+
 empty_parameter_test() ->
 	ParameterList = [],
 	?assertEqual(error, query_parameter_api:get_parameters(ParameterList)).
@@ -191,3 +198,4 @@ good_parameters_all_test() ->
 good_parameters_all_2_test() ->
 	ParameterList = [{numberOfMatches, 5}, {windowSize, 10}, {consecutive, nonConsecutive}, {matchType, matchRecognise}, {resetStrategy, noRestart}, {windowType, time} ],
 	?assertEqual({5, 10, time, nonConsecutive, matchRecognise, noRestart}, query_parameter_api:get_parameters(ParameterList)).
+-endif.

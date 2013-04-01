@@ -22,7 +22,10 @@
 
 -module(expiry_api).
 
--include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+	-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -include("window.hrl").
 
 %%
@@ -161,6 +164,8 @@ filter(FilterList, OriginalList) ->
 %% Tests
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-ifdef(TEST).
+
 match_list_filter_test() ->
 	MatchList = [[1,2,3], [2,3,4]],
 	DeleteList = [1,2],
@@ -227,3 +232,5 @@ filter_test() ->
 	List = build_expiry_list(Now, Now2),
 	FilterList = [{3, Now2}, {4, Now2}],
 	?assertEqual([{1, Now}, {2, Now}], filter(FilterList, List)).
+
+-endif.

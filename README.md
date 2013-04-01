@@ -4,15 +4,15 @@ A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by
 
 ##Features
 
-1. Simple API.
-2. CEP rules programmed in javascript.
-3. Supports many data feeds.  Each feed can have none or many time or size based windows. 
-4. Rules are split into two steps.  Row Functions filter and match data as it is applied to a window.  Only data that passes the filter make it into the window. Reduce Functions are used to aggregate data when a CEP rule matches.
-5. Standard, MatchRecognize and Every CEP rules.
-6. Configurable pattern recognition.
-7. Searchable windows using a list based query API.
-8. Join data from multiple windows. Use a simple javascript API to make the most of joins within Row Functions.
-9. Publish and subscribe mechanism used to notify interested processes when CEP rules match.
+* Simple API.
+* CEP rules programmed in javascript.
+* Supports many data feeds.  Each feed can have none or many time or size based windows. 
+* Rules are split into two steps.  Row Functions filter and match data as it is applied to a window.  Only data that passes the filter make it into the window. Reduce Functions are used to aggregate data when a CEP rule matches.
+* Standard, MatchRecognize and Every CEP rules.
+* Configurable pattern recognition.
+* Searchable windows using a list based query API.
+* Join data from multiple windows. Use a simple javascript API to make the most of joins within Row Functions.
+* Publish and subscribe mechanism used to notify interested processes when CEP rules match.
 
 ##How Does it Work?
 
@@ -20,15 +20,13 @@ The feed_api is used to create Feeds and Windows.  Each feed can have one or man
 
 A Feed is a stream of json encoded data (other formats are possible, but might need some more testing in this version).
 
-A Window is a data storage abstraction with embedded CEP rule and configuration.  Each feed can have none or many windows that can be stoped and started independantly.
+A Window is a data storage abstraction with embedded CEP rule and configuration.  Each feed can have none or many windows that can be stoped and started independently.
 
-Each Window implements a Row and Reduce Function in javascript.  
+Each Window consumes Row and Reduce functions implemented in javascript.  
 
 The Row Function is a filter.  Only data which passes the filter makes it into the window.  
 
-The Reduce Function aggregates the data when a CEP rule matches.
-
-The Reduce Function fires when a CEP rule is matched.  
+The Reduce Function executes when a CEP rule is matched. 
 
 A CEP rule is a combination of the Row Function and Window configuration.  After the Reduce Function runs, the reduced results are published to subscribed processes.
 
@@ -42,11 +40,11 @@ Finally the publish and subscribe mechanism distributes the average price and st
 
 erlang_cep supports three types of query.
 
-* Standard - Performs simple matches.  I.e. match every google trade with a sale price > £10.
+* "Standard" - Performs simple matches.  I.e. match every google trade with a sale price > £10.
            
-* matchRecognise - Perform matches that make a progression.  I.e. match every google trade with a sale price greater than £10, where the next sale price is greater than the previous sell price.  Fire when this progression happens 3 times in a row.
+* "matchRecognise" - Perform matches that make a progression.  I.e. match every google trade with a sale price greater than £10, where the next sale price is greater than the previous sell price.  Fire when this progression happens 3 times in a row.
 				 
-* every - Performs standard matches where the results are output at a regular interval.  I.e in a 60 second window give me the average sale price for all Google trades.
+* "every" - Performs standard matches where the results are output at a regular interval.  I.e in a 60 second window give me the average sale price for all Google trades.
 
 ##Window Types
 
@@ -60,10 +58,10 @@ erlang_cep supports two types of window.
 
 Windows are configured through a list of tuples.  Version 0.1 supports the following configuration parameters where the first element in the tuple is the parameter name, the second is a value or atom.
 
-* {NumberOfMatches, Numeric} 	- The number of matches required to fire the Reduce Function.
+* {numberOfMatches, Numeric} 	- The number of matches required to fire the Reduce Function.
 * {WindowSize, Numeric} 	- The size of the window (number of elements for size based windows, time in seconds for time based windows), 
 * {WindowType , size / time} 	- The type of the window size or time. 
-* {Consecutive, consecutive / nonConsecutive} - Specifies whether matches need to be made up from consecutive or nonConsecutive data elements.  For example if this flag is set to consecutive, and NumberOfMatches is set to 3, then the reduce function will fire if the Row Function for three consecutive elements match			  
+* {Consecutive, consecutive / nonConsecutive} - Specifies whether matches need to be made up from consecutive or nonConsecutive data elements.  For example if this flag is set to consecutive, and numberOfMatches is set to 3, then the reduce function will fire if the Row Function for three consecutive elements match			  
 * {matchType, standard / matchRecognise / every}
 * {resetStrategy, restart / noRestart}	- After the Reduce Function runs should the window be reset or carry on.
 
@@ -72,7 +70,7 @@ The default Consecutive parameter is consecutive.
 The default matchType is standard.
 The default resetStrategy is restart.
 
-If a query fails to parse the error atom is returned.
+If a query fails to parse an error atom is returned.
 
 Some examples :-
 
@@ -91,18 +89,18 @@ and then restart.
 
 ##Row Functions
 
-Row Functions are defined as erlang binaries.  There are two types standard and matchRecognise.
+Row Functions are defined as erlang binaries.  There are two types "standard" / "every" and "matchRecognise".
 
 ###Standard Row Functions
 
-Standard Row Functions are used to filter data as it is inputed into a window.
+"Standard" Row Functions are used to filter data as it is inputed into a window.
 
 Each row function must accept the following parameters :-
 
 1. parameters - An array of values initialised when the window is first started. Use these parameters to build functions without hard coded values. i.e. if (price > parameters[0]) rather than if (price > 1.00)
 2. joins - An array or arrays of joined data.  [ [FeedName, WindowName, [ Joined Rows ]] ].  Each joined row is an array of one or more elements.
 3. row - A String containing the new data.
-4. otherRow - A string holding data from the previous match.  Only used in matchRecognize windows.
+4. otherRow - A string holding data from the previous match.  Only used in "matchRecognise" windows, where the new data is compared against the last successful match, rather than a hard coded rule.
 5. first - A boolean set to true if this is the initial check within a matchRecognise window, false if checking data against previous values.
 
 As an example this function will match if the price is greater than 1.00.
@@ -130,9 +128,9 @@ If the Row Function fails to match it must return an empty list.
 
 The results of a row function must be a list.  The order of the list is important as it dictates how the data is stored within the window results.  Row Functions, searches and joins must respect this order.
 
-WHen using joins, the code can be simplified by using the Join object.  
+When using joins, the code can be simplified by using the Join object.  
 
-Create a join object passing the joins parameter and optionally the name of the join feed / window.
+Create a join object passing the joins parameter and optionally the name of the join feed / window if you want to restrict the join.
   
 var j = new Join(joins);
 
@@ -153,10 +151,25 @@ Here's an example.
 
 This example returns Yes if the value of parameters[0] is found at position 0.
 
-###A MatchRecognise Row Function
+An example of a join looking for data from a feed called feed1 and window called window1.
 
-MatchRecognise Functions find complex progressive patterns in data.  Typically they are called twice, once to check that new row data passes an initial
-threshold (the first parameter is set to true), then again to check new row data against previous matches (the first parameter is set to false).
+
+	var rowFunction = function(parameters, joins, row, otherRow, first){
+		var j = new Join(joins, 'feed1', 'window1');
+
+		if (j.exists(parameters[0], 0)){
+			return [\"Yes\"];
+		}
+		
+	return [\"Nope\"]}
+
+
+###A "MatchRecognise" Row Function
+
+"MatchRecognise" Functions find complex progressive patterns in data.  Typically the Row Function is called from two perspectives.  Initially the "first" parameter 
+is set to true and the function acts as as a threshold check.  In this mode you are trying to get a first value into the window. On subsequent calls the first 
+parameter is set to false, and the data from the previous match is passed into the "otherRow" variable facilitating a comparison between the latest
+data and the last good match.  The first parameter is set to false when matched data expires from the window, or a query fires (if resetStrategy is set to restart).  
 
     <<"var rowFunction = function(parameters, joins, row, otherRow, first){
     							
@@ -199,7 +212,7 @@ threshold (the first parameter is set to true), then again to check new row data
 
 Reduce Functions are called to aggregate results when a CEP Window Fires. 
 
-The Reduce Function takes in one parameter which is a multidimensional array containing the results from all the Row Functions that have successfully matched 
+The Reduce Function takes one parameter which is a multidimensional array containing the results from all the Row Functions that have successfully matched 
 (i.e the arrays returned from all successfully matching row functions).
 
 In this example the matches data is the following array :-
@@ -233,7 +246,7 @@ The important functions are :-
 
 1. feed_api:start_feed(<feed_name_atom>). - Starts a feed gen_server named after the atom.
 2. feed_api:start_window(<window_name_atom>, <feed_name_atom>, RowFunction, ReduceFunction, QueryParameters, YourParameters). - Adds a window to the feed.
-3. feed_api:subscribe_feed_window(<feed_name_atom>, <window_name_atom>, Pid). - Subscribes a Pid to the feed / window.  This Pid is called when a match is found. 
+3. feed_api:subscribe_feed_window(<feed_name_atom>, <window_name_atom>, Pid). - Subscribes a Pid to the feed / window.  This Pid is called when a match is found with the results from the Reduce Function. 
 
 The parameters of start_window are :-
 
@@ -387,6 +400,8 @@ Please note that this is a very early beta release, and I'm quite new to erlang.
 8. My MatchRecognise queries are very basic.  Add more functionality.
 9. Use Lexx and Yacc to create a DSL to decsribe Windows and patterns. 
 10. Each window currently has its own Javascript VM.  As the number of VM's increases this could cause issues.
+
+Please let me know if you find any bugs!
 
 ##Licence
 

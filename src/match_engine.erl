@@ -26,7 +26,9 @@
 %% Include files
 %%
 
--include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+	-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %%
 %% Exported Functions
@@ -252,6 +254,8 @@ is_consecutive([H | T], LastHead, Matches, WindowSize, NumberOfMatches, WindowTy
 %%% These are our tests
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-ifdef(TEST).
+
 %% @doc Test to see if the elements in a list are consecutive.
 %% 		Should return the list if they are, should return an empty
 %% 		list if not.
@@ -286,3 +290,5 @@ is_match_nonConsecutive_standard_multiple_one_fail_test() ->
 
 is_match_consecutive_fail_test() ->
 	?assertEqual([], is_match([[0,1,3,5]], 10, 10, consecutive, size)).
+
+-endif.

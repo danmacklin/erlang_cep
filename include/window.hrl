@@ -20,6 +20,19 @@
 %%
 %% -------------------------------------------------------------------
 
--record(state, {name, results, matches, timingsDict, position, rowQuery, reduceQuery, queryParameters, jsPort, pidList, sequenceNumber, parameters, searches}).
+-record(state, {name			:: atom(),
+				results			:: dict(),
+				matches			:: list(integer()), 
+				timingsDict		:: dict(), 
+				position		:: integer(), 
+				rowQuery		:: binary(), 
+				reduceQuery 	:: binary(), 
+				queryParameters	:: atom | tuple(), 
+				jsPort			:: pid(), 
+				pidList			:: list(pid()), 
+				sequenceNumber	:: integer(), 
+				parameters		:: list(any()), 
+				searches		:: list()}).
 
--record(timingData, {oldData, newData}).
+-record(timingData, {oldData	:: list(integer()), 
+					 newData	:: list(integer())}).

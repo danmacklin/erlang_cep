@@ -22,12 +22,14 @@
 
 -module(join_api).
 
--include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+	-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %%
 %% Exported Functions
 %%
--export([run_joins/2, create_echo_row_function/0, create_echo_join_function/0, join_test_interactive/0]).
+-export([run_joins/2, create_echo_row_function/0, create_echo_join_function/0]).
 
 %%
 %% API Functions
@@ -68,11 +70,17 @@ produce_results(_FeedName, _WindowName, []) ->
 produce_results(FeedName, WindowName, Results) ->
 	[[FeedName, WindowName, Results]].
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Tests
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 create_echo_row_function() ->
 	<<"var rowFunction = function(parameters, joins, row, otherRow, first){return [row]}">>.
 
 create_echo_join_function() ->
 		<<"var rowFunction = function(parameters, joins, row, otherRow, first){return [joins]}">>.
+
+-ifdef(TEST).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc This test sets up a feed with with two windows.  The first window is set
@@ -116,21 +124,23 @@ standard_end_to_end_3_elements_with_search_test() ->
                              [[[<<"joinFeedOne">>,<<"joinWinOne">>,
                                 [[0]]]]]], Result).
 
-join_test_interactive() ->
-	RowFunctionWindow1 = join_api:create_echo_row_function(),
-	RowFunctionWindow2 = join_api:create_echo_join_function(),
-	ReduceFunction = <<"">>,
-	QueryParameterList = [{numberOfMatches, 5}, {windowSize, 5}],
-	Search = [[joinFeedOne, joinWinOne, ['_'], hardCoded]],
-	feed_api:start_feed(joinFeedOne),
-	feed_api:start_window(joinWinOne, joinFeedOne, RowFunctionWindow1, ReduceFunction, QueryParameterList, []),
-	feed_api:start_window(joinWinTwo, joinFeedOne, RowFunctionWindow2, ReduceFunction, QueryParameterList, []),
-	feed_api:add_searches(joinFeedOne, joinWinTwo, Search),
-	
-	ok = timer:sleep(1000),
-	
-	io:format("Searches Added = ~p ~n", [feed_api:view_searches(joinFeedOne, joinWinTwo)]),
+%% join_test_interactive() ->
+%% 	RowFunctionWindow1 = join_api:create_echo_row_function(),
+%% 	RowFunctionWindow2 = join_api:create_echo_join_function(),
+%% 	ReduceFunction = <<"">>,
+%% 	QueryParameterList = [{numberOfMatches, 5}, {windowSize, 5}],
+%% 	Search = [[joinFeedOne, joinWinOne, ['_'], hardCoded]],
+%% 	feed_api:start_feed(joinFeedOne),
+%% 	feed_api:start_window(joinWinOne, joinFeedOne, RowFunctionWindow1, ReduceFunction, QueryParameterList, []),
+%% 	feed_api:start_window(joinWinTwo, joinFeedOne, RowFunctionWindow2, ReduceFunction, QueryParameterList, []),
+%% 	feed_api:add_searches(joinFeedOne, joinWinTwo, Search),
+%% 	
+%% 	ok = timer:sleep(1000),
+%% 	
+%% 	io:format("Searches Added = ~p ~n", [feed_api:view_searches(joinFeedOne, joinWinTwo)]),
+%% 
+%% 	lists:foreach(fun(Element) -> feed_api:add_data(joinFeedOne, Element), ok = timer:sleep(100) end, lists:seq(0,3)),
+%% 
+%% 	search_api:search_window(joinFeedOne, joinWinTwo, ['_'], ok, hardCoded).
 
-	lists:foreach(fun(Element) -> feed_api:add_data(joinFeedOne, Element), ok = timer:sleep(100) end, lists:seq(0,3)),
-
-	search_api:search_window(joinFeedOne, joinWinTwo, ['_'], ok, hardCoded).
+-endif.

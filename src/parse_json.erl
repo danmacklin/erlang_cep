@@ -23,13 +23,18 @@
 -module(parse_json).
 -export([destructure/2]).
 
--include_lib("eunit/include/eunit.hrl").
-
+-ifdef(TEST).
+	-include_lib("eunit/include/eunit.hrl").
+-endif.
 destructure(JS, JSON) ->
     F = json:parse(JS),
     F(JSON).
+
+-ifdef(TEST).
 
 parse_json_test() ->
 	Data =  window_api:create_single_json("10.00","10"),
 	Obj =  mochijson2:decode(Data),
 	?assertEqual(10,parse_json:destructure("Obj.volume", Obj)).
+
+-endif.

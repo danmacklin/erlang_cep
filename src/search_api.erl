@@ -27,7 +27,10 @@
 %%
 
 -include("window.hrl").
--include_lib("eunit/include/eunit.hrl").
+
+-ifdef(TEST).
+	-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([search/2, search_window/5, do_search/2, perform_substitution/2]).
 
@@ -125,7 +128,10 @@ match(_Parameter, _Value) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Test Search function
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-ifdef(TEST).
+
 create_results_dict() ->
 	dict:store(2, {"", ["Goog", 1.01, 13]}, dict:store(1, {"", ["Goog", 1.00, 12]}, dict:new())).
 
@@ -142,3 +148,5 @@ do_pass_search_fail_test() ->
 substitution_test() ->
 	Json1 = window_api:create_single_json("1.01", "10"),
 	?assertEqual([<<"GOOG">>,'_',1.01], perform_substitution(Json1, ["Obj.symbol", '_' , "Obj.price"])).
+
+-endif.

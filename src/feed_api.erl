@@ -26,7 +26,10 @@
 %% Include files
 %%
 
--include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+	-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -include_lib("cep_logger.hrl").
 
 %%
@@ -40,7 +43,9 @@
 %% API Functions
 %%
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Starts a supervision hierarchy for a new feed
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_feed(FeedName) ->
 	{ok, Pid} = feed_sup:start_link(FeedName),
 	Pid.
@@ -48,32 +53,46 @@ start_feed(FeedName) ->
 get_feed_genserver_name(FeedName) ->
 	list_to_atom(string:concat(atom_to_list(FeedName), "Genserver")).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Used to test the supervisor hierarchy
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 crash_feed_genserver(FeedName) ->
 	gen_server:cast(get_feed_genserver_name(FeedName), {generateError}).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Start a new window for this feed.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_window(WindowName, FeedName, RowFunction, ReduceFunction, QueryParameterList, Parameters) ->
 	QueryParameters = query_parameter_api:get_parameters(QueryParameterList),
 	gen_server:cast(get_feed_genserver_name(FeedName), {startWindow, WindowName, FeedName, RowFunction, ReduceFunction, QueryParameters, Parameters}).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Stop a window
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 stop_window(FeedName, WindowName) ->
 	gen_server:cast(get_feed_genserver_name(FeedName), {stopWindow, WindowName}).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Subscribe to a feeds window
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 subscribe_feed_window(FeedName, WindowName, Pid) ->
 	gen_server:cast(get_feed_genserver_name(FeedName), {subscribe, WindowName, Pid}).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Called by feed_genserver to do the subscribe
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_subscribe_feed_window(WindowName, Pid) ->
 	window_api:subscribe(WindowName, Pid).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Add data to a feed
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 add_data(FeedName, Data) ->
 	gen_server:cast(get_feed_genserver_name(FeedName), {addData, Data}).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Called by feed_gen_server to send the data to each window
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 do_add_data(Data, WindowPidsList, SearchDict) ->
 	%% Send the data to each window
 	lists:foreach(fun({WindowName, Pid}) ->
@@ -116,7 +135,9 @@ add_searches(FeedName, WindowName, Searches) ->
 do_add_searches(SearchDict, WindowName, Searches) ->
 	dict:append_list(WindowName, Searches, SearchDict).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc View a list of the searches added to this window
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 view_searches(FeedName, WindowName) ->
 	gen_server:call(get_feed_genserver_name(FeedName), {viewSearches, WindowName}).
 
@@ -129,7 +150,9 @@ do_view_searches(SearchDict, WindowName) ->
 			Value
 	end.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Remove a list of searches from the window.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 remove_searches(FeedName, WindowName, Searches) ->
 	gen_server:cast(get_feed_genserver_name(FeedName), {removeSearches, WindowName, Searches}).
 
@@ -139,12 +162,6 @@ do_remove_searches(WindowName, Searches, SearchDict) ->
 				end, do_view_searches(SearchDict, WindowName), Searches),
 	dict:store(WindowName, NewSearchList, SearchDict).
 
-%%add_json_parse_function(FeedName, WindowName, JSONParseFunction) ->
-%%	gen_server:cast(get_feed_genserver_name(FeedName), {addJsonParseFunction, WindowName, JSONParseFunction}).
-
-%%view_json_parse_function(FeedName, WindowName) ->
-%%	gen_server:call(get_feed_genserver_name(FeedName), {viewJsonParseFunction, WindowName}).
-	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Tests
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -155,6 +172,8 @@ receive_message(Pid) ->
 			timer:sleep(1000),
 			Pid ! Results
 	end.
+
+-ifdef(TEST).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc This test sets up a feed with a standard window looking for the volume to 
@@ -306,3 +325,5 @@ setup_search_test() ->
 	
 	feed_api:remove_searches(setup_search_feed, setup_search_feedWin, [[setup_search_feed, setup_search_feedWin, ['_', '_', <<"Goog">>], hardCoded]]),
 	?assertEqual([[setup_search_feed, setup_search_feedWin, ['_', '_', <<"Goog">>], json]], feed_api:view_searches(setup_search_feed, setup_search_feedWin)).
+
+-endif.
