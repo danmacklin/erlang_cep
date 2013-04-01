@@ -299,7 +299,9 @@ The following code shows an example callback function.
     	
 ##Searching
 
-You can search within a window by calling search_api:search_window(FeedName, WindowName, SearchParameter, Row, rowType).
+You can search within a window by calling 
+
+	search_api:search_window(FeedName, WindowName, SearchParameter, Row, rowType).
 
 Where :-
 
