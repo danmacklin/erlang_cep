@@ -301,7 +301,7 @@ The following code shows an example callback function.
 
 You can search within a window by calling 
 
-  	  search_api:search_window(FeedName, WindowName, SearchParameter, Row, rowType).
+    search_api:search_window(FeedName, WindowName, SearchParameter, Row, rowType).
 
 Where :-
 
