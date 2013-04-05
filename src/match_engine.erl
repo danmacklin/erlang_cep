@@ -170,13 +170,14 @@ is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, Resta
 						do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins)
 				end,[], Matches).
 
+%% Only one element in MatchList for this position so return match
 do_match_recognise_nonConsecutive(_ResultsDict, Position, _JSPort, [Position] = Match, _RestartStrategy, _Acc, _Parameters, _Joins) ->
 	[Match];
 
 do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins) ->
 	case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy, Parameters, Joins) of
 		[] ->
-			%% Remember that although the row function has failed it has still passed it's first test!
+			%% Remember that although the row function has failed it has still passed the first test!
 			[[Position]] ++ [Match] ++ Acc;
 		MatchListResult ->
 			[MatchListResult] ++ Acc
@@ -185,20 +186,20 @@ do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartS
 run_match_recognise_row_function(_ResultsDict, _Position, _JSPort, [] , _RestartStrategy, _Parameters, _Joins) ->
 	[];
 
-run_match_recognise_row_function(ResultsDict, Position, JSPort, MatchList, _RestartStrategy, Parameters, Join) ->
+run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, _RestartStrategy, Parameters, Join) ->
 	%% run the match recognise row function on the last element of the MatchList.  
     %% When running second matches the Matched Data is an array [goog, price.......
 	
 	{NewRow, _Result} = dict:fetch(Position, ResultsDict),
 		
-	{MatchedRow, _MatchedResult} = dict:fetch(get_last(MatchList), ResultsDict),
+	{MatchedRow, _MatchedResult} = dict:fetch(get_last(Match), ResultsDict),
 			
-	case window_api:run_row_query(Parameters, Join, JSPort, NewRow, MatchedRow) of
+	case window_api:run_row_query(Parameters, Join, JSPort, NewRow, MatchedRow, Match) of
 		{ok, false} ->
 					[];
 					
 		{ok, true} ->
-					lists:append(MatchList, [Position])
+					lists:append(Match, [Position])
 	end.
 
 %% @doc Get the last element in the match list.  As this is the one that we want to run the row function on.

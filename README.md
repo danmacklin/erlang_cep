@@ -101,11 +101,12 @@ Each row function must accept the following parameters :-
 2. joins - An array or arrays of joined data.  [ [FeedName, WindowName, [ Joined Rows ]] ].  Each joined row is an array of one or more elements.
 3. row - A String containing the new data.
 4. otherRow - A string holding data from the previous match.  Only used in "matchRecognise" windows, where the new data is compared against the last successful match, rather than a hard coded rule.
-5. first - A boolean set to true if this is the initial check within a matchRecognise window, false if checking data against previous values.
+5. sequence - The current number of matches within this window.  Use this number and an array of parameters to perform complex matches.
+6. matchRecogniseFirst - A boolean set to true if this is the initial check within a matchRecognise window, false if checking data against previous values.
 
 As an example this function will match if the price is greater than 1.00.
 
-    <<"var rowFunction = function(parameters, joins, row, otherRow, first){
+    <<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
     							
     							var myObject = JSON.parse(row);
     							symbol = myObject.symbol;
@@ -140,7 +141,7 @@ The source code for the javascript API can be found in /src/js.  If you add any 
 
 Here's an example.
 
-	var rowFunction = function(parameters, joins, row, otherRow, first){
+	var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
 		var j = new Join(joins);
 
 		if (j.exists(parameters[0], 0)){
@@ -154,7 +155,7 @@ This example returns Yes if the value of parameters[0] is found at position 0.
 An example of a join looking for data from a feed called feed1 and window called window1.
 
 
-	var rowFunction = function(parameters, joins, row, otherRow, first){
+	var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
 		var j = new Join(joins, 'feed1', 'window1');
 
 		if (j.exists(parameters[0], 0)){
@@ -169,9 +170,14 @@ An example of a join looking for data from a feed called feed1 and window called
 "MatchRecognise" Functions find complex progressive patterns in data.  Typically the Row Function is called from two perspectives.  Initially the "first" parameter 
 is set to true and the function acts as as a threshold check.  In this mode you are trying to get a first value into the window. On subsequent calls the first 
 parameter is set to false, and the data from the previous match is passed into the "otherRow" variable facilitating a comparison between the latest
-data and the last good match.  The first parameter is set to false when matched data expires from the window, or a query fires (if resetStrategy is set to restart).  
+data and the last good match.  The first parameter is set to false when matched data expires from the window, or a query fires (if resetStrategy is set to restart).
 
-    <<"var rowFunction = function(parameters, joins, row, otherRow, first){
+When the first parameter is set to true, the function must return the data which will be passed to the reduce function.
+
+When the first parameter is set to false, the function is being called from the perspective of "matchRecognise" so only needs to return true if a test
+has passed, or false otherwise.  
+
+    <<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
     							
     							var myObject = JSON.parse(row);
     
@@ -179,7 +185,7 @@ data and the last good match.  The first parameter is set to false when matched 
     							price = myObject.price;
     							volume = myObject.volume;
     
-    							if (first == true){
+    							if (matchRecogniseFirst == true){
 
 								// This path is taken the first time that the row function runs
     

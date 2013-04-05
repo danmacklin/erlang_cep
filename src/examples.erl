@@ -115,7 +115,7 @@ every_window() ->
 	end.
 
 create_every_window_match_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
+	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
 							var myObject = JSON.parse(row);
 							stockCode = myObject.stockCode;
 							unitSalePrice = myObject.unitSalePrice;
@@ -156,10 +156,12 @@ create_every_reduce_function() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 create_join_window_dan_match_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){ return [ \"Dan\" ]}">>.
+	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){ if(sequence == 0){}; return [ \"Dan\" ]}">>.
 
 create_join_window_match_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
+	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence){
+
+							if (sequence == 0){}
 							var j = new Join(joins);
 
 							ejsLog(\"/tmp/foo.txt\", j.exists(parameters[0], 0));

@@ -29,11 +29,6 @@
 %% Then run run_match_test().
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-%%
-%% Include files
-%%
-
 %%
 %% Exported Functions
 %%
@@ -89,6 +84,7 @@ for_each_line(Device, StressPid) ->
                 for_each_line(Device, StressPid)
     end.
 
+%% This is the main match recognise stress test
 run_match_stress() ->	
 	RowFunction = window_api:create_match_recognise_row_function(),
 	ReduceFunction = window_api:create_reduce_function(),
@@ -116,6 +112,7 @@ run_match_stress() ->
 
 	io:format("Took ~p microseconds to do 10000 transactions~n", [Time]).
 
+%% This is the main every stress test
 run_every_stress() ->	
 	RowFunction = window_api:create_match_recognise_row_function(),
 	ReduceFunction = window_api:create_reduce_function(),

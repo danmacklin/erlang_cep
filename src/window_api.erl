@@ -40,7 +40,7 @@
 %%
 %% Exported Functions
 %%
--export([add_data/2, do_add_data/3, run_row_query/5, run_reduce_query/2, next_position/3,
+-export([add_data/2, do_add_data/3, run_row_query/6, run_reduce_query/2, next_position/3,
 		 subscribe/2, unSubscribe/2, do_subscribe/2, do_unSubscribe/2, is_subscribed/2,
 		 create_json/1, create_standard_row_function/0, create_reduce_function/0, create_single_json/2,
 		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2, import_js/1]).
@@ -144,7 +144,9 @@ do_add_data(Row, State=#state{results=Results,
 	
 	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
 		
-	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, []),
+	io:format("Matches***** ~p ~n", [Matches]),
+	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches),
+	io:format("RowResult***** ~p ~n", [RowResult]),
 		
 	{NewMatches, FirstPassed} = case RowResult of 
 					[] ->
@@ -188,7 +190,7 @@ do_add_data(Row, State=#state{results=Results,
 	Now = os:timestamp(),
 	NewSequenceNumber = SequenceNumber + 1,
 	
-	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, []),
+	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches),
 			
 	{NewMatches, FirstPassed, NewTimingsDict} = case RowResult of 
 					[] ->
@@ -237,17 +239,27 @@ import_file(File, JSPort) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Run the row query passing in an empty second parameter meaning that we are not matching
-%% 		against any other data in the window
+%% 		against any other data in the window.
+%%      
+%%      Matches will always be a single list.  I.e this function is called many times in a 
+%%	 	nonConsecutive MatchRecognise see 
+%%		match_engine:is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, RestartStrategy, Parameters, Joins)
 %% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-run_row_query(Parameters, Join, JSPort, Data, []) ->
-	?DEBUG("Running basic row query Parameters:~p Join:~p Data:~p ", [Parameters, Join, Data]),
-	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], true]);
+run_row_query(Parameters, Join, JSPort, Data, [], [[]]) ->
+	?DEBUG("Running basic row query empty Matches Parameters:~p Join:~p Data:~p ", [Parameters, Join, Data]),	
+	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], 0, true]);
+
+run_row_query(Parameters, Join, JSPort, Data, [], Matches) ->
+	?DEBUG("Running basic row query some Matches Parameters:~p Join:~p Data:~p Matches:~p ", [Parameters, Join, Data, Matches]),
+	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], length(Matches), true]);
+	%%{ok, []};
 
 %% @doc Run the row query in match select mode (looking against old data)
-run_row_query(Parameters, Join, JSPort, Data, PrevData) ->
+run_row_query(Parameters, Join, JSPort, Data, PrevData, Matches) ->
 	?DEBUG("Running select row query Parameters:~p Join:~p Data:~p PrevData:~p", [Parameters, Join, Data, PrevData]),
-	js:call(JSPort, <<"rowFunction">>, [Parameters, Join,  Data, PrevData, false]).
+	js:call(JSPort, <<"rowFunction">>, [Parameters, Join,  Data, PrevData, length(Matches), false]).
+	%%{ok, []}.
 
 %% @doc Run the reduce function
 run_reduce_query(JSPort, Results) ->	
@@ -280,7 +292,7 @@ create_single_json(Price, Volume) ->
 	list_to_binary(["{\"symbol\": \"GOOG\",\"price\": ", Price , ",\"volume\": ",  Volume,"}"]).
 
 create_standard_row_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
+	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
 							
 							var myObject = JSON.parse(row);
 							symbol = myObject.symbol;
@@ -295,7 +307,7 @@ create_standard_row_function() ->
 							return []}">>.
 
 create_match_recognise_row_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){
+	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
 							
 							var myObject = JSON.parse(row);
 
@@ -303,7 +315,9 @@ create_match_recognise_row_function() ->
 							price = myObject.price;
 							volume = myObject.volume;
 
-							if (first == true){
+							//sequence = 0 when nothing else has matched.  I.e the matchList is empty, or this is the
+							//initial test of a matchRecognise
+							if (matchRecogniseFirst==true){
 								// the first parameter is 0.50
 								if (price > parameters[0]){
 									return [symbol, price, volume];
@@ -313,7 +327,6 @@ create_match_recognise_row_function() ->
 									return [];
 								}
 							}
-
 							else{
 		
 								var prevObject = JSON.parse(otherRow);								
