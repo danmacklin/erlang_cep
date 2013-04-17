@@ -144,9 +144,8 @@ do_add_data(Row, State=#state{results=Results,
 	
 	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
 		
-	io:format("Matches***** ~p ~n", [Matches]),
 	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches),
-	io:format("RowResult***** ~p ~n", [RowResult]),
+	?DEBUG("RowResult =  ~p", [RowResult]),
 		
 	{NewMatches, FirstPassed} = case RowResult of 
 					[] ->
@@ -252,7 +251,7 @@ run_row_query(Parameters, Join, JSPort, Data, [], [[]]) ->
 
 run_row_query(Parameters, Join, JSPort, Data, [], Matches) ->
 	?DEBUG("Running basic row query some Matches Parameters:~p Join:~p Data:~p Matches:~p ", [Parameters, Join, Data, Matches]),
-	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], length(Matches), true]);
+	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], length(lists:nth(1, Matches)), true]);
 	%%{ok, []};
 
 %% @doc Run the row query in match select mode (looking against old data)

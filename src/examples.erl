@@ -29,7 +29,9 @@
 %%
 %% Exported Functions
 %%
--export([every_window/0, create_single_sales_json/3, receive_message/2, join_window/0, create_join_window_dan_match_function/0, create_join_window_match_function/0]).
+-export([every_window/0, create_single_sales_json/3, receive_message/2, join_window/0, create_join_window_dan_match_function/0, 
+		 create_join_window_match_function/0, receive_pattern_message/0, create_pattern_row_function/0, create_pattern_reduce_function/0,
+		 pattern_window/0]).
 %%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -69,7 +71,7 @@ receive_message(Pid, No) when No =< 10 ->
 receive_message(_Pid, _No) ->
 							 ok.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Set-up a feed with a five second window, performing
 %% 		an every match.
 %%
@@ -77,7 +79,7 @@ receive_message(_Pid, _No) ->
 %% 		be to store sales data, and then average it up
 %% 		every to seconds.
 %% @end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 every_window() ->
 	RowFunction = create_every_window_match_function(),
 	ReduceFunction = create_every_reduce_function(),
@@ -161,7 +163,6 @@ create_join_window_dan_match_function() ->
 create_join_window_match_function() ->
 	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence){
 
-							if (sequence == 0){}
 							var j = new Join(joins);
 
 							ejsLog(\"/tmp/foo.txt\", j.exists(parameters[0], 0));
@@ -173,6 +174,7 @@ create_join_window_match_function() ->
 							return [\"Nope\"]}
 	">>.
 
+%% This is what you call to run the example
 join_window() ->
 	QueryParameterList = [{numberOfMatches, 4}, {windowSize, 4}],
 	
@@ -207,3 +209,56 @@ join_window() ->
 	
 	%% Do another search results should be "Dan and Nope"
 	io:format("~p ~n", search_api:search_window(jFeed2, jf2Win, ['_'], ok, hardCoded)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @doc A pattern example looking for a sequence of events, 1,2,3 and then returning the sum
+%%		when the query fires i.e. 6.
+%% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create_pattern_row_function() ->
+	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst) {
+							ejsLog(\"/tmp/foo.txt\", \"sequence \" + sequence); 
+							ejsLog(\"/tmp/foo.txt\", \"parameters[sequence] \" + parameters[sequence]);
+							ejsLog(\"/tmp/foo.txt\", \"row \"  + row);
+							if(parameters[sequence] == row){
+								ejsLog(\"/tmp/foo.txt\", \"match \" + parameters[sequence] + \" \" + row);
+								return [row];
+							} 
+							return []
+						 }">>.
+
+create_pattern_reduce_function() ->
+	<<"var reduceFunction = function(matches){
+								var sum = 0;
+
+								for(var i=0; i<matches.length; i++) {
+									var match = matches[i];
+									ejsLog(\"/tmp/foo.txt\", \"match =  \" + matches[i]);
+									sum += parseInt(match);
+								}
+
+								return sum;
+
+						   }">>.
+
+receive_pattern_message()  ->
+	receive
+		Results ->
+			io:format("Received ~p ~n",[Results])
+	end.
+	
+pattern_window() ->
+	QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}],
+	
+	feed_api:start_feed(patternFeed),	
+	feed_api:start_window(pattern1Win, patternFeed, examples:create_pattern_row_function(), examples:create_pattern_reduce_function(), QueryParameterList, [1,2,3]),
+	
+	Pid = spawn(?MODULE, receive_pattern_message, []),
+	
+	feed_api:subscribe_feed_window(patternFeed, pattern1Win, Pid),
+	
+	%% Add some data
+	feed_api:add_data(patternFeed, 1),
+	feed_api:add_data(patternFeed, 2),
+	feed_api:add_data(patternFeed, 3).

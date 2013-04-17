@@ -367,6 +367,8 @@ See examples.erl.
 
 ##Compilation / run Instructions
 
+chmod +x rebar
+
 Get the dependencies
 
     make deps
@@ -388,6 +390,8 @@ Start the application
     make run
 
 Make sure that you run make deploy before running make test!
+
+You can speed things up a bit by disabling lager logging within the sys.config file within /erlang_cep/rel/files.
 
 ##Logging / working out what has gone wrong.
 
