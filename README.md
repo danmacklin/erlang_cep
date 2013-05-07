@@ -412,6 +412,8 @@ Please note that this is a very early beta release, and I'm quite new to erlang.
 8. My MatchRecognise queries are very basic.  Add more functionality.
 9. Use Lexx and Yacc to create a DSL to decsribe Windows and patterns. 
 10. Each window currently has its own Javascript VM.  As the number of VM's increases this could cause issues.
+11. Enhance the API so that users can write Row and Reduce functions in erlang.  Make sure that these functions are dynamically loaded.
+12. Create a REST API through which users can add / mutate windows, and row / reduce functions.
 
 Please let me know if you find any bugs!
 
