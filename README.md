@@ -6,35 +6,30 @@ A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by
 
 * Simple API.
 * CEP rules programmed in javascript or pure erlang.
-* Supports many data feeds.  Each feed can have none or many time or size based windows. 
-* Rules are split into two steps.  Row Functions filter and match data on entry to a window.  Data is only added to a window if it passes the Row Function. Reduce Functions are used to aggregate data once a CEP rule fires.
+* Support for many data feeds.  Each feed having none or many time or size based windows. 
+* CEP Rules are split into two steps.  Row Functions filter data on entry to a window.  Reduce Functions aggregate data when a CEP rule fires.
 * Standard, MatchRecognize and Every CEP rules.
 * Configurable pattern recognition.
 * Searchable windows using a list based query API.
-* Join data from multiple windows. (Use a simple javascript API to make the most of joins within Row Functions, if the row function is written using javascript).
-* Publish and subscribe mechanism used to notify interested processes when CEP rules match.
+* Join data from multiple windows. 
+* Publish and subscribe mechanism notifies interested processes when CEP rules match.
 
 ##How Does it Work?
 
-The feed_api is used to create Feeds and Windows.  Each feed can have one or many windows.
+The feed_api is used to create Feeds and Windows.  
+
+Each feed can have none or many windows.
 
 A Feed is a stream of json encoded data (other formats are possible, but might need some more testing in this version).
 
-A Window is an in-memory data storage abstraction with an embedded CEP rule and configuration.  Each feed has none or many windows that can be stoped and started independently.
+A Window is an in-memory data storage abstraction.  Each window has a Row Function, Reduce Function and associated configuration that can be implemted in javascript or erlang. 
 
-Each Window consumes Row and Reduce functions implemented in javascript or pure elrang functions.  
+A Row Function is a filter.  Data is added to the window if it passes the filter.
 
-A Row Function is a filter.  Only data which passes the filter makes it into the window.
+A Reduce Function is a data aggregator. It aggregates data when a CEP rule fires (for example averaging data or performing output formatting).   
 
-A Reduce Function is used to aggregate data when a CEP rule fires (for example averaging data or performing output formatting).   
 
-Each CEP rule is a combination of a Row Function and Window configuration.  After the Reduce Function runs, the reduced results are published to subscribed processes.
-
-A good example is a Stock Market Feed with a time based window.  The window is programmed to fire when three trades with the symbol GOOG and a volume of 100 shares or more make it into the window.  
-
-When the window fires the Reduce Function runs and averages the sale prices.
- 
-Finally the publish and subscribe mechanism distributes the average price and stock symbol to interested processes.
+A good example is a Stock Market Feed with a time based window.  The window is programmed to fire when three trades with the symbol GOOG and a volume of 100 shares or more make it into the window.  When the window fires the Reduce Function runs and averages the sale prices.  Finally the publish and subscribe mechanism distributes the average price and stock symbol to interested processes.
 
 ##Query Types
 
@@ -56,7 +51,7 @@ erlang_cep supports two types of window.
        
 ##Window Configuration
 
-Windows are configured through a list of tuples.  Version 0.1 supports the following configuration parameters where the first element in the tuple is the parameter name, the second is a value or atom.
+Windows are configured through a list of tuples.  Version 0.2 supports the following configuration parameters where the first element in the tuple is the parameter name, the second is a value or atom.
 
 * {numberOfMatches, Numeric} 	- The number of matches required to fire the Reduce Function.
 * {WindowSize, Numeric} 	- The size of the window (number of elements for size based windows, time in seconds for time based windows), 
@@ -89,15 +84,15 @@ and then restart.
 
 ##Row Functions
 
-Row Functions are defined in javascript as binaries or pure erlang functions.  There are three types of row function "standard" / "every" and "matchRecognise".
+Row Functions are defined in javascript as binaries or pure erlang functions.  There are three types of Row Function "standard" / "every" and "matchRecognise".
 
 ###Standard Row Functions 
 
-"Standard" Row Functions are used to filter data as it is inputed into a window.  They can be implemented in javascript or as pure erlang functions.
+"Standard" Row Functions are used to filter data on entry to a window.  They can be implemented in javascript or as pure erlang functions.
 
 ###Javascript Row Functions
 
-Each javascript row function must accept the following parameters :-
+Each javascript Row Function must accept the following parameters :-
 
 1. parameters - An array of values initialised when the window is first started. Use these parameters to build functions without hard coded values. i.e. if (price > parameters[0]) rather than if (price > 1.00)
 2. joins - An array or arrays of joined data.  [ [FeedName, WindowName, [ Joined Rows ]] ].  Each joined row is an array of one or more elements.
@@ -129,7 +124,7 @@ To debug a javascript row function use
 
 If the Row Function fails to match it must return an empty list.
 
-The results of a row function must be a list.  The order of the list is important as it dictates how the data is stored within the window results.  Row Functions, searches and joins must respect this order.
+The results of a Row Function must be a list.  The order of the list is important as it dictates how the data is stored within the window results.  Row Functions, searches and joins must respect this order.
 
 When using joins, the javascript code can be simplified by using the Join object.  
 
@@ -169,8 +164,8 @@ Here's example of a javascript row function with a join looking for data from a 
 
 ###Javascript "MatchRecognise" Row Functions
 
-"MatchRecognise" Functions are used to find complex progressive patterns in data. Typically a MatchRecognise Row Function is called from two perspectives.  Initially the "matchRecogniseFirst" parameter 
-is set to true and the function acts as as a threshold check.  In this mode the function acts as a filter making sure that the new row data can be added to the Window. On subsequent calls the matchRecogniseFirst 
+"MatchRecognise" Row Functions are used to find complex progressive patterns in data. Typically a MatchRecognise Row Function is called from two perspectives.  Initially the "matchRecogniseFirst" parameter 
+is set to true and the function acts as as a threshold check.  In this mode the function is a filter making sure that the new row data can be added to the Window. On subsequent calls the matchRecogniseFirst 
 parameter is set to false, and the data from the previous match is passed into the "otherRow" variable facilitating a comparison between the latest
 data and the last good match.  The matchRecogniseFirst parameter is set to false when matched data expires from the window, or a query fires (if resetStrategy is set to restart).
 
@@ -179,7 +174,7 @@ When the matchRecogniseFirst parameter is set to true, the function must return 
 When the matchRecogniseFirst parameter is set to false, the function is being called from the perspective of "matchRecognise" so only needs to return true if a test
 has passed, or false otherwise.  
 
-This is an example of a javascript MatchRecognise Row Function
+An example javascript MatchRecognise Row Function
 
     <<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
     							
@@ -227,7 +222,7 @@ Reduce Functions are called to aggregate results when a CEP Window Fires. They c
 A Reduce Function takes one parameter which is a multidimensional array containing the results from all the Row Functions that have successfully matched 
 (i.e the arrays returned from all successfully matching row functions).
 
-In this javascript example the matches data is the following array :-
+In this javascript example the matches parameter holds the following array :-
 
     [["Goog", 2.00, 20], ["Goog", 2.01, 21]]
 
@@ -251,14 +246,14 @@ In this javascript example the matches data is the following array :-
 The feed_api is used to :-
 
 1. create new feeds and windows.
-2. Subscribe your application to be notified when Reduce Functions run.
+2. Subscribe your application to be notified once Reduce Functions run.
 3. Set-up joins.
 
 The important functions are :-
 
 1. feed_api:start_feed(<feed_name_atom>). - Starts a feed gen_server named after the atom.
 2. feed_api:start_window(<window_name_atom>, <feed_name_atom>, RowFunction, ReduceFunction, QueryParameters, YourParameters). - Adds a window to the feed.  Please note that if you want to implement the Row and Reduce functions in javascript 
-then the Row and Reduce Functions should be binaries containing javascript code.  If the Row and Reduce functions are implemented in erlang then these parameters should contain tuples pointing containing the {ModuleName, FunctionName} of the Row and Reduce Functions.
+then the Row and Reduce Functions should be binaries containing javascript code.  If the Row and Reduce functions are implemented in erlang then these parameters should contain tuples containing the {ModuleName, FunctionName} of the Row and Reduce Functions.
 3. feed_api:subscribe_feed_window(<feed_name_atom>, <window_name_atom>, Pid). - Subscribes a Pid to the feed / window.  This Pid is called when a match is found with the results from the Reduce Function. 
 
 The parameters of start_window are :-
@@ -316,11 +311,11 @@ Version 0.2 includes support for writing Row and Reduce functions in pure erlang
 
 A good example of a MatchRecognise query written in erlang can be found within example_erlang_match_recognise.erl.
 
-When using erlang make sure that the Row and Reduce Function parameters within the feed_api:start_window function take in tuples that point to the module and function where the Row and Reduce Queries are implemented.
+When using erlang make sure that the Row and Reduce Function parameters within the feed_api:start_window function are tuples containing the module and function where the Row and Reduce Queries are implemented.
 
 Theoretically you should be able to match erlang and javascript Row and Reduce functions but this has not been tested!
 
-You can find a good example of a matchRecognise window written in erlang within feed_api:erlang_match_recognise_test() and the example_erlang_match_recognise module.
+You can find a good example of an erlang matchRecognise rul09/05/2013 - e in feed_api:erlang_match_recognise_test() and the example_erlang_match_recognise module.
     	
 ##Searching
 
@@ -444,4 +439,4 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 ##Change Log
 
-0.2 Allow Row and Reduce Functions to be written in pure erlang as well as Javascript
+19/05/2013 - V0.2 Allow Row and Reduce Functions to be written in pure erlang as well as Javascript
