@@ -7,11 +7,11 @@ A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by
 * Simple API.
 * CEP rules programmed in javascript or pure erlang.
 * Supports many data feeds.  Each feed can have none or many time or size based windows. 
-* Rules are split into two steps.  Row Functions filter and match data as it is applied to a window.  Only data that passes the filter make it into the window. Reduce Functions are used to aggregate data when a CEP rule matches.
+* Rules are split into two steps.  Row Functions filter and match data as it is applied to a window.  Only data that passes the filter make it into the window. Reduce Functions are used to aggregate data once a CEP rule fires.
 * Standard, MatchRecognize and Every CEP rules.
 * Configurable pattern recognition.
 * Searchable windows using a list based query API.
-* Join data from multiple windows. (Use a simple javascript API to make the most of joins within Row Functions (if the row function is written using javascript).
+* Join data from multiple windows. (Use a simple javascript API to make the most of joins within Row Functions, if the row function is written using javascript).
 * Publish and subscribe mechanism used to notify interested processes when CEP rules match.
 
 ##How Does it Work?
@@ -20,19 +20,19 @@ The feed_api is used to create Feeds and Windows.  Each feed can have one or man
 
 A Feed is a stream of json encoded data (other formats are possible, but might need some more testing in this version).
 
-A Window is a data storage abstraction with embedded CEP rule and configuration.  Each feed can have none or many windows that can be stoped and started independently.
+A Window is an in memory data storage abstraction with an embedded CEP rule and configuration.  Each feed has none or many windows that can be stoped and started independently.
 
-Each Window consumes Row and Reduce functions implemented in javascript or as pure elrang functions.  
+Each Window consumes Row and Reduce functions implemented in javascript or pure elrang functions.  
 
-The Row Function is a filter.  Only data which passes the filter makes it into the window.  
+A Row Function is a filter.  Only data which passes the filter makes it into the window.
 
-The Reduce Function executes when a CEP rule is matched. 
+A Reduce Function is used to aggregate data when a CEP rule fires (for example averaging data or performing output formatting).   
 
-A CEP rule is a combination of the Row Function and Window configuration.  After the Reduce Function runs, the reduced results are published to subscribed processes.
+Each CEP rule is a combination of a Row Function and Window configuration.  After the Reduce Function runs, the reduced results are published to subscribed processes.
 
 A good example is a Stock Market Feed with a time based window.  The window is programmed to fire when three trades with the symbol GOOG and a volume of 100 shares or more make it into the window.  
 
-When the window fires the Reduce Function runs and averages all of the sale prices.
+When the window fires the Reduce Function runs and averages the sale prices.
  
 Finally the publish and subscribe mechanism distributes the average price and stock symbol to interested processes.
 
