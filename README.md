@@ -7,7 +7,7 @@ A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by
 * Simple API.
 * CEP rules programmed in javascript or pure erlang.
 * Support for many data feeds.  Each feed having none or many time or size based windows. 
-* CEP Rules are split into two steps.  Row Functions filter data on entry to a window.  Reduce Functions aggregate data when a CEP rule fires.
+* Three step CEP rules.  Row Functions filter data on entry to a window. Configuration sets the size of window and number of matches. Reduce Functions aggregate data when a CEP rule fires.
 * Standard, MatchRecognize and Every CEP rules.
 * Configurable pattern recognition.
 * Searchable windows using a list based query API.
