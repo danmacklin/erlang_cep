@@ -7,7 +7,7 @@ A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by
 * Simple API.
 * CEP rules programmed in javascript or erlang.
 * Supports many data feeds.  Each feed having none or many time or size based windows. 
-* Three step CEP rules.  COnfiguration sets-up the window.  Row Functions filter on entry to a window. Reduce Functions aggregate data when a window breaches its configuration thresholds.
+* Three step CEP rules.  Configuration sets-up the window.  Row Functions filter on entry to a window. Reduce Functions aggregate data when a window breaches it's configuration thresholds.
 * Standard, MatchRecognise and Every CEP rules.
 * Configurable pattern recognition.
 * Search API.
@@ -20,7 +20,7 @@ The feed_api is used to create Feeds and Windows.
 
 Each feed can have none or many windows.
 
-A Feed is a stream of json encoded data (other formats are possible, but might need some more testing in this version).
+A Feed is a stream of Json encoded data (other formats are possible, but might need some more testing in this version).
 
 A Window is an in-memory data storage abstraction.  Each window has a Row Function, Reduce Function and associated configuration.  Functions can be implemented in javascript or erlang. 
 
@@ -36,9 +36,9 @@ A good example is a Stock Market Feed with a time based window.  The window is p
 
 erlang_cep supports three types of query.
 
-* "Standard" - Performs simple matches.  I.e. match every google trade with a sale price > £10.
+* "Standard" - Performs simple matches.  I.E. match every Google trade with a sale price > £10.
            
-* "matchRecognise" - Perform matches that make a progression.  I.e. match every google trade with a sale price greater than £10, where the next sale price is greater than the previous sell price.  Fire when this progression happens 3 times in a row.
+* "matchRecognise" - Perform matches that make a progression.  I.E. match every Google trade with a sale price greater than £10, where the next sale price is greater than the previous sell price.  Fires when this progression happens 3 times in a row.
 				 
 * "every" - Performs standard matches where the results are output at a regular interval.  I.E. in a 60 second window give me the average sale price for all Google trades.
 
@@ -57,7 +57,7 @@ Windows are configured through a list of tuples.  Version 0.2 supports the follo
 * {numberOfMatches, Numeric} 	- The number of matches required to fire the Reduce Function.
 * {windowSize, Numeric} 	- The size of the window (number of elements for size based windows, time in seconds for time based windows), 
 * {windowType , size / time} 	- The type of the window size or time. 
-* {consecutive, consecutive / nonConsecutive} - Specifies whether matches need to be made up from consecutive or nonConsecutive data elements.  For example if this configuration is set to consecutive, and numberOfMatches is set to 3, then the Reduce Runction will fire the Row Function when three consecutive elements match.			  
+* {consecutive, consecutive / nonConsecutive} - Specifies whether matches need to be made up from consecutive or nonConsecutive data elements.  For example if this configuration is set to consecutive, and numberOfMatches is set to 3, then the Reduce Function will fire the Row Function when three consecutive elements match.			  
 * {matchType, standard / matchRecognise / every} - The type of CEP rule.
 * {resetStrategy, restart / noRestart} - After the Reduce Function runs should the window be reset or carry on.
 
@@ -74,7 +74,7 @@ Set up a standard four element size window, which will fire it's Reduce Function
 
     QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}]
 
-Set up a matchRecognise four element window, which will fire it's Reduce Function after three consecutive matches and then restart
+Set up a matchRecognise four element window, which will fire it's Reduce Function after three consecutive matches and then restart.
 
     QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}],
 
@@ -96,7 +96,7 @@ Each javascript Row Function must accept the following parameters :-
 
 1. parameters - An array of values initialised when the window is first started. Use these parameters to build functions without hard coded values. i.e. if (price > parameters[0]) rather than if (price > 1.00)
 2. joins - An array or arrays of joined data.  [ [FeedName, WindowName, [ Joined Rows ]] ].  Each joined row is an array of one or more elements.
-3. row - A String containing the new data.
+3. row - A string containing the new data.
 4. otherRow - A string holding data from the previous match.  Only used in "matchRecognise" windows, where the new data is compared against the last successful match, rather than a hard coded rule.
 5. sequence - The current number of matches within this window.  Use this number and an array of parameters to perform complex matches.
 6. matchRecogniseFirst - A boolean set to true if this is the initial check within a matchRecognise window, false if checking data against previous values.
@@ -162,7 +162,7 @@ Here's an example of a javascript Row Function with a join looking for data from
 ###Javascript "MatchRecognise" Row Functions
 
 "MatchRecognise" Row Functions are used to find complex progressive patterns in data. Typically a MatchRecognise Row Function is called from two perspectives.  Initially the "matchRecogniseFirst" parameter 
-is set to true and the function acts as as a threshold check.  In this mode the Row Function is a filter restricting the data that can be added to the Window. On subsequent calls the matchRecogniseFirst 
+is set to true and the function acts as a threshold check.  In this mode the Row Function is a filter restricting the data that can be added to the Window. On subsequent calls the matchRecogniseFirst 
 parameter is set to false, and data stored from the previous match is passed into the "otherRow" variable so these values can be compared as part of a progressive patten match.  
 
 The matchRecogniseFirst parameter is set to false when data expires from the window, or a query fires (if resetStrategy is set to restart).
@@ -242,7 +242,7 @@ In this javascript example the matches parameter holds the following array :-
 
 The feed_api is used to :-
 
-1. create new feeds and windows.
+1. Create new feeds and windows.
 2. Subscribe your application to be notified once Reduce Functions run.
 3. Set-up joins.
 
@@ -342,9 +342,9 @@ Please look in stress_test.erl (run_match_test() and run_every_test()) and examp
 
 There are many good examples in the eunit tests within feed_api.erl.
 
-##Joining windows
+##Joining Windows
 
-You can join windows by making use of the the search api.
+You can join windows by making use of the search api.
 
 Joins need to be formatted as a list and added to a window using the feed_api:add_searches() function.
 
@@ -406,11 +406,11 @@ You can speed things up a bit by disabling lager logging within the sys.config f
 I have included the excellent lager logging framework from Basho.  You can change the logging levels by modifying the sys.config settings within the rel/files directory. By default the logs are outputted to the 
 /erlang_cep/rel/erlang_cep/log directory.
 
-##TODO
+##TO DO
 
 Please note that this is a very early beta release, and I'm quite new to erlang..........
 
-1. Implement every queries for standard windows, currently this functionality is only available for timed windows.
+1. Implement "Every" queries for standard windows, currently this functionality is only available for timed windows.
 2. Look at failure scenarios.  Subscriptions and some config will not survive window process failures.
 3. Implement more advanced CEP algorithms such as Rete.
 4. Use Mnesia to try to make windows HA.
@@ -418,7 +418,7 @@ Please note that this is a very early beta release, and I'm quite new to erlang.
 6. Test, test and test again
 7. Some more stress tests.
 8. Support more window types. 
-9. Each window currently has its own Javascript VM.  As the number of VM's increases this could cause issues.
+9. Each window currently has it's own Javascript VM.  As the number of VM's increases this could cause issues.
 10. Enhance the API so that users can write Row and Reduce functions in erlang.  Make sure that these functions are dynamically loaded.
 11. Create a REST API through which users can add / mutate windows, and row / reduce functions.
 
