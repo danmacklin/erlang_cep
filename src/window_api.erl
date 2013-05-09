@@ -40,7 +40,7 @@
 %%
 %% Exported Functions
 %%
--export([add_data/2, do_add_data/3, run_row_query/6, run_reduce_query/2, next_position/3,
+-export([add_data/2, do_add_data/3, run_row_query/7, run_reduce_query/3, next_position/3,
 		 subscribe/2, unSubscribe/2, do_subscribe/2, do_unSubscribe/2, is_subscribed/2,
 		 create_json/1, create_standard_row_function/0, create_reduce_function/0, create_single_json/2,
 		 create_match_recognise_row_function/0, remove_match/2, clock_tick/1, generate_tick/2, import_js/1]).
@@ -102,7 +102,8 @@ clock_tick(State=#state{results=ResultsDict,
 						jsPort=JSPort,
 						pidList = PidList,
 						timingsDict = TimingsDict,
-						name = Name}) ->
+						name = Name,
+						reduceQuery = ReduceQuery}) ->
 	
 	?DEBUG("Ticking clock for Name:~p Position:~p Matches:~p PidList:~p", [Name, Position, MatchList, PidList]),
 	
@@ -112,7 +113,7 @@ clock_tick(State=#state{results=ResultsDict,
 	
 	MutatedMatchList = case NewPosition of
 							0 when MatchType == every ->
-								match_engine:run_reduce_function(PidList, MatchList, NumberOfMatches, ResultsDict, JSPort, ResetStrategy);
+								match_engine:run_reduce_function(PidList, MatchList, NumberOfMatches, ResultsDict, JSPort, ResetStrategy, ReduceQuery);
 							_ ->
 								MatchList
 						end,
@@ -140,11 +141,13 @@ do_add_data(Row, State=#state{results=Results,
 							  jsPort=JSPort,
 							  parameters = Parameters,
 							  pidList=PidList,
-							  name = Name}, Joins) ->
+							  name = Name,
+							  rowQuery = RowQuery,
+							  reduceQuery = ReduceQuery}, Joins) ->
 	
 	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
 		
-	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches),
+	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches, RowQuery),
 	?DEBUG("RowResult =  ~p", [RowResult]),
 		
 	{NewMatches, FirstPassed} = case RowResult of 
@@ -165,7 +168,7 @@ do_add_data(Row, State=#state{results=Results,
 	%% Move to next position
 	NewPosition = next_position(Position, WindowSize, size),
 	
-	MutatedMatches = match_engine:do_match(QueryParameters, ResultsDict, NewMatches, JSPort, Position, PidList, FirstPassed, Parameters, Joins),
+	MutatedMatches = match_engine:do_match(QueryParameters, ResultsDict, NewMatches, JSPort, Position, PidList, FirstPassed, Parameters, Joins, RowQuery, ReduceQuery),
 
 	%% Return the state
   	State#state{position = NewPosition, results = ResultsDict, matches = MutatedMatches};
@@ -182,14 +185,16 @@ do_add_data(Row, State=#state{results=Results,
 							  sequenceNumber=SequenceNumber,
 							  parameters=Parameters,
 							  timingsDict=TimingsDict,
-							  name=Name}, Joins) ->
+							  name=Name,
+							  rowQuery = RowQuery,
+							  reduceQuery = ReduceQuery}, Joins) ->
 	
 	?DEBUG("Do_add_data for time based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
 		
 	Now = os:timestamp(),
 	NewSequenceNumber = SequenceNumber + 1,
 	
-	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches),
+	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches, RowQuery),
 			
 	{NewMatches, FirstPassed, NewTimingsDict} = case RowResult of 
 					[] ->
@@ -209,7 +214,7 @@ do_add_data(Row, State=#state{results=Results,
 	{FilteredTimingsDict, FilteredMatchList, FilteredResultsDict} = 
 			expiry_api:expire_from_expiry_dict(NewTimingsDict, SequenceNumber, NewMatches, ResultsDict, Now, WindowSize),
 		
-	MatchedMatches = match_engine:do_match(QueryParameters, FilteredResultsDict, FilteredMatchList, JSPort, SequenceNumber, PidList, FirstPassed, Parameters, Joins),
+	MatchedMatches = match_engine:do_match(QueryParameters, FilteredResultsDict, FilteredMatchList, JSPort, SequenceNumber, PidList, FirstPassed, Parameters, Joins, RowQuery, ReduceQuery),
 	
 	%% Return the state
   	State#state{results = FilteredResultsDict, matches = MatchedMatches, timingsDict=FilteredTimingsDict, sequenceNumber = NewSequenceNumber}.
@@ -245,23 +250,38 @@ import_file(File, JSPort) ->
 %%		match_engine:is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, RestartStrategy, Parameters, Joins)
 %% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-run_row_query(Parameters, Join, JSPort, Data, [], [[]]) ->
+run_row_query(Parameters, Join, mfa, Data, [], [[]], {RowQueryModule, RowQueryFunction}) ->
+	?DEBUG("Running erlang basic row query empty Matches Parameters:~p Join:~p Data:~p RowQuery:~p", [Parameters, Join, Data, {RowQueryModule, RowQueryFunction}]),
+	{ok, erlang:apply(RowQueryModule, RowQueryFunction, [Parameters, Join, Data, [], 0, true])};
+
+run_row_query(Parameters, Join, mfa, Data, [], Matches, {RowQueryModule, RowQueryFunction}) ->
+	?DEBUG("Running erlang basic row query some Matches Parameters:~p Join:~p Data:~p Matches:~p RowQuery:~p", [Parameters, Join, Data, Matches, {RowQueryModule, RowQueryFunction}]),
+	{ok, erlang:apply(RowQueryModule, RowQueryFunction, [Parameters, Join, Data, [], length(lists:nth(1, Matches)), true])};
+
+%% @doc Run the row query in match select mode (looking against old data)
+run_row_query(Parameters, Join, mfa, Data, PrevData, Matches, {RowQueryModule, RowQueryFunction}) ->
+	?DEBUG("Running erlang select row query Parameters:~p Join:~p Data:~p PrevData:~p RowQuery:~p", [Parameters, Join, Data, PrevData, {RowQueryModule, RowQueryFunction}]),
+	{ok, erlang:apply(RowQueryModule, RowQueryFunction, [Parameters, Join,  Data, PrevData, length(Matches), false])};
+
+run_row_query(Parameters, Join, JSPort, Data, [], [[]], _RowQuery) ->
 	?DEBUG("Running basic row query empty Matches Parameters:~p Join:~p Data:~p ", [Parameters, Join, Data]),	
 	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], 0, true]);
 
-run_row_query(Parameters, Join, JSPort, Data, [], Matches) ->
+run_row_query(Parameters, Join, JSPort, Data, [], Matches, _RowQuery) ->
 	?DEBUG("Running basic row query some Matches Parameters:~p Join:~p Data:~p Matches:~p ", [Parameters, Join, Data, Matches]),
 	js:call(JSPort, <<"rowFunction">>, [Parameters, Join, Data, [], length(lists:nth(1, Matches)), true]);
-	%%{ok, []};
 
 %% @doc Run the row query in match select mode (looking against old data)
-run_row_query(Parameters, Join, JSPort, Data, PrevData, Matches) ->
+run_row_query(Parameters, Join, JSPort, Data, PrevData, Matches, _RowQuery) ->
 	?DEBUG("Running select row query Parameters:~p Join:~p Data:~p PrevData:~p", [Parameters, Join, Data, PrevData]),
 	js:call(JSPort, <<"rowFunction">>, [Parameters, Join,  Data, PrevData, length(Matches), false]).
-	%%{ok, []}.
 
 %% @doc Run the reduce function
-run_reduce_query(JSPort, Results) ->	
+run_reduce_query(mfa, Results, {ReduceQueryModule, ReduceQueryFunction}) ->	
+	?DEBUG("Running erlang reduce query Results:~p ", [Results]),
+	{ok, erlang:apply(ReduceQueryModule, ReduceQueryFunction, Results)};
+
+run_reduce_query(JSPort, Results, _ReduceQuery) ->	
 	?DEBUG("Running reduce query Results:~p ", [Results]),
 	js:call(JSPort, <<"reduceFunction">>, Results).
 

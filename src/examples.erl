@@ -262,3 +262,4 @@ pattern_window() ->
 	feed_api:add_data(patternFeed, 1),
 	feed_api:add_data(patternFeed, 2),
 	feed_api:add_data(patternFeed, 3).
+	

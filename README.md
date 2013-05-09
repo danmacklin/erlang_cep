@@ -1,17 +1,17 @@
-#erlang_cep v0.1 Beta
+#erlang_cep v0.2 Beta
 
 A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by esper and CouchDB. 
 
 ##Features
 
 * Simple API.
-* CEP rules programmed in javascript.
+* CEP rules programmed in javascript or pure erlang.
 * Supports many data feeds.  Each feed can have none or many time or size based windows. 
 * Rules are split into two steps.  Row Functions filter and match data as it is applied to a window.  Only data that passes the filter make it into the window. Reduce Functions are used to aggregate data when a CEP rule matches.
 * Standard, MatchRecognize and Every CEP rules.
 * Configurable pattern recognition.
 * Searchable windows using a list based query API.
-* Join data from multiple windows. Use a simple javascript API to make the most of joins within Row Functions.
+* Join data from multiple windows. (Use a simple javascript API to make the most of joins within Row Functions (if the row function is written using javascript).
 * Publish and subscribe mechanism used to notify interested processes when CEP rules match.
 
 ##How Does it Work?
@@ -22,7 +22,7 @@ A Feed is a stream of json encoded data (other formats are possible, but might n
 
 A Window is a data storage abstraction with embedded CEP rule and configuration.  Each feed can have none or many windows that can be stoped and started independently.
 
-Each Window consumes Row and Reduce functions implemented in javascript.  
+Each Window consumes Row and Reduce functions implemented in javascript or as pure elrang functions.  
 
 The Row Function is a filter.  Only data which passes the filter makes it into the window.  
 
@@ -89,13 +89,15 @@ and then restart.
 
 ##Row Functions
 
-Row Functions are defined as erlang binaries.  There are two types "standard" / "every" and "matchRecognise".
+Row Functions are defined in javascript as binaries or pure erlang functions.  There are three types of row function "standard" / "every" and "matchRecognise".
 
-###Standard Row Functions
+###Standard Row Functions 
 
-"Standard" Row Functions are used to filter data as it is inputed into a window.
+"Standard" Row Functions are used to filter data as it is inputed into a window.  They can be implemented in javascript or as pure erlang functions.
 
-Each row function must accept the following parameters :-
+###Javascript Row Functions
+
+Each javascript row function must accept the following parameters :-
 
 1. parameters - An array of values initialised when the window is first started. Use these parameters to build functions without hard coded values. i.e. if (price > parameters[0]) rather than if (price > 1.00)
 2. joins - An array or arrays of joined data.  [ [FeedName, WindowName, [ Joined Rows ]] ].  Each joined row is an array of one or more elements.
@@ -104,7 +106,7 @@ Each row function must accept the following parameters :-
 5. sequence - The current number of matches within this window.  Use this number and an array of parameters to perform complex matches.
 6. matchRecogniseFirst - A boolean set to true if this is the initial check within a matchRecognise window, false if checking data against previous values.
 
-As an example this function will match if the price is greater than 1.00.
+As an example this javascript function will match if the price is greater than 1.00.
 
     <<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
     							
@@ -120,7 +122,7 @@ As an example this function will match if the price is greater than 1.00.
     							return []}">>.
 							
 
-To debug a javascript function use
+To debug a javascript row function use
 
 	ejsLog("/tmp/foo.txt", "Hello");
 
@@ -129,13 +131,13 @@ If the Row Function fails to match it must return an empty list.
 
 The results of a row function must be a list.  The order of the list is important as it dictates how the data is stored within the window results.  Row Functions, searches and joins must respect this order.
 
-When using joins, the code can be simplified by using the Join object.  
+When using joins, the javascript code can be simplified by using the Join object.  
 
 Create a join object passing the joins parameter and optionally the name of the join feed / window if you want to restrict the join.
   
 var j = new Join(joins);
 
-Then use the exists(value, position) function to Search the joins array for a value at position pos. 
+Use the exists(value, position) function to Search the joins array for a value at position pos. 
 
 The source code for the javascript API can be found in /src/js.  If you add any other javascript functions to this file / directory they will be loaded into the javascript vm each time a window starts.
 
@@ -152,7 +154,7 @@ Here's an example.
 
 This example returns Yes if the value of parameters[0] is found at position 0.
 
-An example of a join looking for data from a feed called feed1 and window called window1.
+Here's example of a javascript row function with a join looking for data from a feed called feed1 and window called window1.
 
 
 	var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
@@ -165,17 +167,19 @@ An example of a join looking for data from a feed called feed1 and window called
 	return [\"Nope\"]}
 
 
-###A "MatchRecognise" Row Function
+###Javascript "MatchRecognise" Row Functions
 
-"MatchRecognise" Functions find complex progressive patterns in data.  Typically the Row Function is called from two perspectives.  Initially the "first" parameter 
-is set to true and the function acts as as a threshold check.  In this mode you are trying to get a first value into the window. On subsequent calls the first 
+"MatchRecognise" Functions are used to find complex progressive patterns in data. Typically a MatchRecognise Row Function is called from two perspectives.  Initially the "matchRecogniseFirst" parameter 
+is set to true and the function acts as as a threshold check.  In this mode the function acts as a filter making sure that the new row data can be added to the Window. On subsequent calls the matchRecogniseFirst 
 parameter is set to false, and the data from the previous match is passed into the "otherRow" variable facilitating a comparison between the latest
-data and the last good match.  The first parameter is set to false when matched data expires from the window, or a query fires (if resetStrategy is set to restart).
+data and the last good match.  The matchRecogniseFirst parameter is set to false when matched data expires from the window, or a query fires (if resetStrategy is set to restart).
 
-When the first parameter is set to true, the function must return the data which will be passed to the reduce function.
+When the matchRecogniseFirst parameter is set to true, the function must return the data which will be passed to the window.
 
-When the first parameter is set to false, the function is being called from the perspective of "matchRecognise" so only needs to return true if a test
+When the matchRecogniseFirst parameter is set to false, the function is being called from the perspective of "matchRecognise" so only needs to return true if a test
 has passed, or false otherwise.  
+
+This is an example of a javascript MatchRecognise Row Function
 
     <<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){
     							
@@ -216,12 +220,14 @@ has passed, or false otherwise.
            	  
 ##Reduce Functions
 
-Reduce Functions are called to aggregate results when a CEP Window Fires. 
+Reduce Functions are called to aggregate results when a CEP Window Fires. They can be written in javascript or as pure erlang functions.
 
-The Reduce Function takes one parameter which is a multidimensional array containing the results from all the Row Functions that have successfully matched 
+###Javascript Reduce Functions
+
+A Reduce Function takes one parameter which is a multidimensional array containing the results from all the Row Functions that have successfully matched 
 (i.e the arrays returned from all successfully matching row functions).
 
-In this example the matches data is the following array :-
+In this javascript example the matches data is the following array :-
 
     [["Goog", 2.00, 20], ["Goog", 2.01, 21]]
 
@@ -251,19 +257,20 @@ The feed_api is used to :-
 The important functions are :-
 
 1. feed_api:start_feed(<feed_name_atom>). - Starts a feed gen_server named after the atom.
-2. feed_api:start_window(<window_name_atom>, <feed_name_atom>, RowFunction, ReduceFunction, QueryParameters, YourParameters). - Adds a window to the feed.
+2. feed_api:start_window(<window_name_atom>, <feed_name_atom>, RowFunction, ReduceFunction, QueryParameters, YourParameters). - Adds a window to the feed.  Please note that if you want to implement the Row and Reduce functions in javascript 
+then the Row and Reduce Functions should be binaries containing javascript code.  If the Row and Reduce functions are implemented in erlang then these parameters should contain tuples pointing containing the {ModuleName, FunctionName} of the Row and Reduce Functions.
 3. feed_api:subscribe_feed_window(<feed_name_atom>, <window_name_atom>, Pid). - Subscribes a Pid to the feed / window.  This Pid is called when a match is found with the results from the Reduce Function. 
 
 The parameters of start_window are :-
 
 1. The name of the window as an atom.
 2. The name for the feed as an atom.
-3. A binary containing the javascript Row Function.
-4. A binary containing the javascript Reduce Function.
+3. A binary containing a javascript Row Function or a tuple containing a Module and Function Name {RowFunctionModule, RowFunctionName}.
+4. A binary containing a javascript Reduce Function or a tuple containing a Module and Function Name {ReduceFunctionModule, ReduceFunctionName}
 5. A list of configuration parameters.  View the Window Configuration section for more details.
-6. A list of custom parameters that you can pass into the match function to tailer matches.   
+6. A list of custom parameters that you can pass into the match function to trigger matches.  This could be a list of values that the Row Function must match as part of a complex pattern.   
 
-The following code shows how to set-up a new feed, add a new window and subscribe a process to receive updates.
+The following code shows how to set-up a new feed, add a new window and subscribe a process to receive updates using javascript.
 
     %% Create a list containing some Binary Json.  [<<" valid json ">>, <<" Some more ">>]  
     Data = window_api:create_json([{"1.01", "14"}, {"1.02", "15"}, {"2.00", "16"}]),
@@ -294,7 +301,7 @@ The following code shows how to set-up a new feed, add a new window and subscrib
     				feed_api:add_data(stress, DataElement)
     			  end, Data).
 
-The following code shows an example callback function.
+The following code shows an example subscriber call back function.
 
     get_response() ->
 	    receive
@@ -302,6 +309,18 @@ The following code shows an example callback function.
 			    io:format("Stress test fired ~p ~n", [Results]),
 			    get_response()
     	end.
+
+##Row and Reduce Functions in erlang
+
+Version 0.2 includes support for writing Row and Reduce functions in pure erlang.
+
+A good example of a MatchRecognise query written in erlang can be found within example_erlang_match_recognise.erl.
+
+When using erlang make sure that the Row and Reduce Function parameters within the feed_api:start_window function take in tuples that point to the module and function where the Row and Reduce Queries are implemented.
+
+Theoretically you should be able to match erlang and javascript Row and Reduce functions but this has not been tested!
+
+You can find a good example of a matchRecognise window written in erlang within feed_api:erlang_match_recognise_test() and the example_erlang_match_recognise module.
     	
 ##Searching
 
@@ -422,3 +441,7 @@ Please let me know if you find any bugs!
 This software is open source.  It is licensed under the Apache 2 license.  Please feel free to email me at danmacklin10 at gmail.com if you have any issues or suggestions.
 
 http://www.apache.org/licenses/LICENSE-2.0
+
+##Change Log
+
+0.2 Allow Row and Reduce Functions to be written in pure erlang as well as Javascript

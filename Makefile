@@ -33,4 +33,4 @@ deps:
 	@REBAR_EXTRA_DEPS=1 ./rebar get-deps
 
 test:
-	@$(REBAR) eunit
+	@$(REBAR) eunit skip_deps=true

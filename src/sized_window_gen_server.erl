@@ -50,13 +50,9 @@ init([Name, RowQuery, ReduceQuery, QueryParameters, Parameters]) ->
 	?INFO("Starting window Name:~s Pid:~p", [Name, self()]),
 
 	{_NumberOfMatches, _WindowSize, WindowType, _Consecutive, _MatchType, _ResetStrategy} = QueryParameters,
-	{ok, JSPort} = js_driver:new(),
 	
-	js:define(JSPort, RowQuery),
-	js:define(JSPort, ReduceQuery),
+	JSPort = do_initialisation(RowQuery, ReduceQuery),
 	
-	window_api:import_js(JSPort),
-
 	%% Set-up tick
 	case WindowType of
 		time ->
@@ -68,7 +64,19 @@ init([Name, RowQuery, ReduceQuery, QueryParameters, Parameters]) ->
 	
 	{ok, #state{name = Name, position = 0, results = dict:new(), matches = [[]], timingsDict = dict:new(), rowQuery = RowQuery, 
 				reduceQuery = ReduceQuery, queryParameters = QueryParameters, jsPort = JSPort, pidList = [], sequenceNumber=0, 
-				parameters = Parameters, searches = []}}. 
+				parameters = Parameters, searches = []}}.
+
+do_initialisation(RowQuery, ReduceQuery) when is_binary(RowQuery) andalso is_binary(ReduceQuery) ->
+	{ok, JSPort} = js_driver:new(),
+	
+	js:define(JSPort, RowQuery),
+	js:define(JSPort, ReduceQuery),
+	
+	window_api:import_js(JSPort),
+	JSPort;
+	
+do_initialisation(RowQuery, ReduceQuery) when is_tuple(RowQuery) andalso is_tuple(ReduceQuery) ->
+	mfa.
 
 start_link(Name, RowQuery, ReduceQuery, QueryParameters, Parameters) -> 
 	gen_server:start_link(?MODULE, [Name, RowQuery, ReduceQuery, QueryParameters, Parameters], []).

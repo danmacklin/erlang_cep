@@ -75,10 +75,10 @@ produce_results(FeedName, WindowName, Results) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 create_echo_row_function() ->
-	<<"var rowFunction = function(parameters, joins, row, otherRow, first){return [row]}">>.
+	<<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){return [row]}">>.
 
 create_echo_join_function() ->
-		<<"var rowFunction = function(parameters, joins, row, otherRow, first){return [joins]}">>.
+		<<"var rowFunction = function(parameters, joins, row, otherRow, sequence, matchRecogniseFirst){return [joins]}">>.
 
 -ifdef(TEST).
 
@@ -93,8 +93,8 @@ standard_end_to_end_3_elements_with_search_test() ->
 	
 	application:start(erlang_cep),
 	
-	RowFunctionWindow1 = create_echo_row_function(),
-	RowFunctionWindow2 = create_echo_join_function(),
+	RowFunctionWindow1 = join_api:create_echo_row_function(),
+	RowFunctionWindow2 = join_api:create_echo_join_function(),
 	
 	ReduceFunction = <<"">>,	
 	QueryParameterList = [{numberOfMatches, 5}, {windowSize, 5}],

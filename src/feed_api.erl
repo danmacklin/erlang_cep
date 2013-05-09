@@ -175,6 +175,37 @@ receive_message(Pid) ->
 
 -ifdef(TEST).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @doc An example showing how to use Erlang functions rather than javascript to
+%%		perform a match recognise match.
+%% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+erlang_match_recognise_test() -> 
+	Data = window_api:create_json([{"1.01", "14"}, {"1.02", "15"}, {"2.00", "16"}]),
+	RowFunction = {example_erlang_match_recognise, match_recognise_row_function},
+	ReduceFunction = {example_erlang_match_recognise, match_recognise_reduce_function},
+	
+	QueryParameterList = [{numberOfMatches, 3}, {windowSize, 4}, {matchType, matchRecognise}],
+	
+	feed_api:start_feed(erlangTestFeedMatchRecognise),
+	
+	feed_api:start_window(erlangTestWinFeedMatchRecognise, erlangTestFeedMatchRecognise, RowFunction, ReduceFunction,  QueryParameterList, [0.50]),
+	
+	Pid = spawn(?MODULE, receive_message, [self()]),
+	
+	subscribe_feed_window(erlangTestFeedMatchRecognise, erlangTestWinFeedMatchRecognise, Pid),
+	
+	lists:foreach(fun (DataElement) ->
+					add_data(erlangTestFeedMatchRecognise, DataElement)
+				  end, Data),
+	receive
+		Results ->
+			?assertEqual(15.0, Results)
+	after 4000 ->
+			io:format("Timed out ~n"),
+			p=y
+	end.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc This test sets up a feed with a standard window looking for the volume to 
 %% 		increase each time.  It should fire the reduce function that will calculate
@@ -270,7 +301,6 @@ time_match_recognise_end_to_end_3_elements_test() ->
 				  end, Data),
 	receive
 		Results ->
-			io:format("fired~n"),
 			?assertEqual(15, Results)
 	after 4000 ->
 			io:format("Timed out ~n"),

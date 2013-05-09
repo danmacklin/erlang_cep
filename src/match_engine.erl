@@ -33,31 +33,30 @@
 %%
 %% Exported Functions
 %%
--export([do_match/9, run_reduce_function/6]).
+-export([do_match/11, run_reduce_function/7]).
 
 %%
 %% API Functions Note this only gets called after an initial first pass match.
 %%
 
-do_match(_QueryParameters, 
-		 _ResultsDict, Matches, _JSPort, _Position, _PidList, false, _Parameters, _Joins) ->
+do_match(_QueryParameters, _ResultsDict, Matches, _JSPort, _Position, _PidList, false, _Parameters, _Joins, _RowQuery, _ReduceQuery) ->
 	Matches;
 
 %% If the Number of Matches = 0 then don't perform matches.
 do_match({0, _WindowSize, _WindowType, _Consecutive, _MatchType, _RestartStrategy} = _QueryParameters, 
-		 _ResultsDict, Matches, _JSPort, _Position, _PidList, _First, _Parameters, _Joins) ->
+		 _ResultsDict, Matches, _JSPort, _Position, _PidList, _First, _Parameters, _Joins, _RowQuery, _ReduceQuery) ->
 	Matches;
 
 do_match({NumberOfMatches, WindowSize, WindowType, Consecutive, MatchType, RestartStrategy} = _QueryParameters, 
-		 ResultsDict, Matches, JSPort, Position, PidList, true, Parameters, Joins) ->
+		 ResultsDict, Matches, JSPort, Position, PidList, true, Parameters, Joins, RowQuery, ReduceQuery) ->
 
 	case MatchType of 
 		matchRecognise ->
-			MutatedMatchList = is_match_recognise(ResultsDict, Position, JSPort, Matches, Consecutive, RestartStrategy, Parameters, Joins),
-			run_reduce_function(PidList, MutatedMatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy);
+			MutatedMatchList = is_match_recognise(ResultsDict, Position, JSPort, Matches, Consecutive, RestartStrategy, Parameters, Joins, RowQuery),
+			run_reduce_function(PidList, MutatedMatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy, ReduceQuery);
 		standard ->
 			MutatedMatchList = is_match(Matches, NumberOfMatches, WindowSize, Consecutive, WindowType),
-			run_reduce_function(PidList, MutatedMatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy);
+			run_reduce_function(PidList, MutatedMatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy, ReduceQuery);
 		every ->
 			%% Do not need to run a reduce function for an every window.  Run on the window roll-over
 			Matches
@@ -67,14 +66,14 @@ do_match({NumberOfMatches, WindowSize, WindowType, Consecutive, MatchType, Resta
 %% Internal stuff
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-run_reduce_function(_PidList, [], _NumberOfMatches, _ResultsDict, _JSPort, _RestartStrategy) ->
+run_reduce_function(_PidList, [], _NumberOfMatches, _ResultsDict, _JSPort, _RestartStrategy, _ReduceQuery) ->
 	[[]];
 
-run_reduce_function(PidList, MatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy) ->
+run_reduce_function(PidList, MatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy, ReduceQuery) ->
 	Res = lists:foldl(fun(Matches, Acc) ->
 						case length(Matches) >= NumberOfMatches of
 							true ->
-								{ok, ReduceResults} = window_api:run_reduce_query(JSPort, [extract_results(Matches, ResultsDict)]),
+								{ok, ReduceResults} = window_api:run_reduce_query(JSPort, [extract_results(Matches, ResultsDict)], ReduceQuery),
 								bang_processes(PidList, ReduceResults),
 								
 								case RestartStrategy of
@@ -107,7 +106,8 @@ extract_results(MatchList, ResultsDict) ->
 					{_Row, Result} = dict:fetch(Match, ResultsDict),
 					[Result | Acc]
 				end, [], MatchList)).
-    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Run a Match Recognise
 %% 		Return a list, containing a list of positions where the Match Recognise row function returns true.
 %% 		For example [[R1,R2,R3], [R2,R3,R4]]
@@ -145,15 +145,15 @@ extract_results(MatchList, ResultsDict) ->
 
 %% 		An empty match list must return an empty match list.
 %%	@end
-is_match_recognise(_ResultsDict, _Position, _JSPort, [[]], consecutive, _RestartStrategy, _Parameters, _Joins) ->
+is_match_recognise(_ResultsDict, _Position, _JSPort, [[]], consecutive, _RestartStrategy, _Parameters, _Joins, _RowQuery) ->
 	[[]];
 
-is_match_recognise(_ResultsDict, Position, _JSPort, [[Position]] = Matches, consecutive, _RestartStrategy, _Parameters, _Joins) ->
+is_match_recognise(_ResultsDict, Position, _JSPort, [[Position]] = Matches, consecutive, _RestartStrategy, _Parameters, _Joins, _RowQuery) ->
 	Matches;
 
-is_match_recognise(ResultsDict, Position, JSPort, Matches, consecutive, RestartStrategy, Parameters, Joins) ->
+is_match_recognise(ResultsDict, Position, JSPort, Matches, consecutive, RestartStrategy, Parameters, Joins, RowQuery) ->
 	lists:foldl(fun(Match, Acc) ->
-						case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy, Parameters, Joins) of
+						case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy, Parameters, Joins, RowQuery) of
 							[] ->
 								%% Remember that although the row function has failed it has still passed it's first test!
 								[[Position]] ++ Acc;
@@ -165,17 +165,17 @@ is_match_recognise(ResultsDict, Position, JSPort, Matches, consecutive, RestartS
 %% @doc For non consecutive if there is no match add a new match element to the match list.
 %% 		i.e. Before [[1,2,3]] 4 doesn't match so we have [[1,2,3], [4]] 
 %% @end
-is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, RestartStrategy, Parameters, Joins) ->
+is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, RestartStrategy, Parameters, Joins, RowQuery) ->
 	lists:foldl(fun(Match, Acc) ->
-						do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins)
+						do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins, RowQuery)
 				end,[], Matches).
 
 %% Only one element in MatchList for this position so return match
-do_match_recognise_nonConsecutive(_ResultsDict, Position, _JSPort, [Position] = Match, _RestartStrategy, _Acc, _Parameters, _Joins) ->
+do_match_recognise_nonConsecutive(_ResultsDict, Position, _JSPort, [Position] = Match, _RestartStrategy, _Acc, _Parameters, _Joins, _RowQuery) ->
 	[Match];
 
-do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins) ->
-	case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy, Parameters, Joins) of
+do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartStrategy, Acc, Parameters, Joins, RowQuery) ->
+	case run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, RestartStrategy, Parameters, Joins, RowQuery) of
 		[] ->
 			%% Remember that although the row function has failed it has still passed the first test!
 			[[Position]] ++ [Match] ++ Acc;
@@ -183,10 +183,10 @@ do_match_recognise_nonConsecutive(ResultsDict, Position, JSPort, Match, RestartS
 			[MatchListResult] ++ Acc
 	end.
 
-run_match_recognise_row_function(_ResultsDict, _Position, _JSPort, [] , _RestartStrategy, _Parameters, _Joins) ->
+run_match_recognise_row_function(_ResultsDict, _Position, _JSPort, [] , _RestartStrategy, _Parameters, _Joins, _RowQuery) ->
 	[];
 
-run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, _RestartStrategy, Parameters, Join) ->
+run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, _RestartStrategy, Parameters, Join, RowQuery) ->
 	%% run the match recognise row function on the last element of the MatchList.  
     %% When running second matches the Matched Data is an array [goog, price.......
 	
@@ -194,7 +194,7 @@ run_match_recognise_row_function(ResultsDict, Position, JSPort, Match, _RestartS
 		
 	{MatchedRow, _MatchedResult} = dict:fetch(get_last(Match), ResultsDict),
 			
-	case window_api:run_row_query(Parameters, Join, JSPort, NewRow, MatchedRow, Match) of
+	case window_api:run_row_query(Parameters, Join, JSPort, NewRow, MatchedRow, Match, RowQuery) of
 		{ok, false} ->
 					[];
 					

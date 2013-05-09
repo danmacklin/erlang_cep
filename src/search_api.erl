@@ -65,7 +65,6 @@ substitute(Row, Element) ->
 
 %% Called from feed genserver to perform search within window process
 do_search(WindowName, SearchParameter) ->
-	io:format("***** ~p ~n", [WindowName]),
 	[{_WindowName,WindowPid}] = ets:lookup(window_ets, WindowName),
 	gen_server:call(WindowPid, {search, SearchParameter}).
 

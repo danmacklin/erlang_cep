@@ -25,10 +25,10 @@
 				matches			:: list(integer()), 
 				timingsDict		:: dict(), 
 				position		:: integer(), 
-				rowQuery		:: binary(), 
-				reduceQuery 	:: binary(), 
+				rowQuery		:: binary() | tuple(), %% {M,F} 
+				reduceQuery 	:: binary() | tuple(), %% {M,F}
 				queryParameters	:: atom | tuple(), 
-				jsPort			:: pid(), 
+				jsPort			:: pid() | atom(), 
 				pidList			:: list(pid()), 
 				sequenceNumber	:: integer(), 
 				parameters		:: list(any()), 
