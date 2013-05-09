@@ -7,7 +7,7 @@ A simple CEP (Complex Event Processing) engine written in erlang OTP inspired by
 * Simple API.
 * CEP rules programmed in javascript or pure erlang.
 * Supports many data feeds.  Each feed can have none or many time or size based windows. 
-* Rules are split into two steps.  Row Functions filter and match data as it is applied to a window.  Only data that passes the filter make it into the window. Reduce Functions are used to aggregate data once a CEP rule fires.
+* Rules are split into two steps.  Row Functions filter and match data on entry to a window.  Data is only added to a window if it passes the Row Function. Reduce Functions are used to aggregate data once a CEP rule fires.
 * Standard, MatchRecognize and Every CEP rules.
 * Configurable pattern recognition.
 * Searchable windows using a list based query API.
@@ -20,7 +20,7 @@ The feed_api is used to create Feeds and Windows.  Each feed can have one or man
 
 A Feed is a stream of json encoded data (other formats are possible, but might need some more testing in this version).
 
-A Window is an in memory data storage abstraction with an embedded CEP rule and configuration.  Each feed has none or many windows that can be stoped and started independently.
+A Window is an in-memory data storage abstraction with an embedded CEP rule and configuration.  Each feed has none or many windows that can be stoped and started independently.
 
 Each Window consumes Row and Reduce functions implemented in javascript or pure elrang functions.  
 
