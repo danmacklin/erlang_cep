@@ -22,7 +22,7 @@ Each feed can have none or many windows.
 
 A Feed is a stream of json encoded data (other formats are possible, but might need some more testing in this version).
 
-A Window is an in-memory data storage abstraction.  Each window has a Row Function, Reduce Function and associated configuration that can be implemted in javascript or erlang. 
+A Window is an in-memory data storage abstraction.  Each window has a Row Function, Reduce Function and associated configuration that can be implemented in javascript or erlang. 
 
 A Row Function is a filter.  Data is added to the window if it passes the filter.
 
@@ -315,7 +315,7 @@ When using erlang make sure that the Row and Reduce Function parameters within t
 
 Theoretically you should be able to match erlang and javascript Row and Reduce functions but this has not been tested!
 
-You can find a good example of an erlang matchRecognise rul09/05/2013 - e in feed_api:erlang_match_recognise_test() and the example_erlang_match_recognise module.
+You can find a good example of an erlang matchRecognise rule in feed_api:erlang_match_recognise_test() and the example_erlang_match_recognise module.
     	
 ##Searching
 
