@@ -19,6 +19,9 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%% An example showing how to write a row and reduce function in erlang
+
 -module(example_erlang_match_recognise).
 
 %%
@@ -35,6 +38,9 @@
 
 -export([match_recognise_row_function/6, match_recognise_reduce_function/1]).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% An example match recognise row function implemented in erlang
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 match_recognise_row_function(Parameters, _Joins, Row, _OtherRow, _Sequence, true) ->
 	ParsedJson = mochijson2:decode(Row),
 	Symbol = parse_json:destructure("Obj.symbol", ParsedJson),
@@ -62,6 +68,10 @@ match_recognise_row_function(_Parameters, _Joins, Row, OtherRow, _Sequence, fals
 			false
 	end.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% An example match recognise reduce function written in erlang
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 match_recognise_reduce_function(Matches) ->
+	%%Volume is stored in the 3rd parameter
 	TotalSum = lists:foldr(fun(Value, Sum) -> Sum + lists:nth(3, Value) end, 0, Matches),
 	TotalSum / length(Matches).

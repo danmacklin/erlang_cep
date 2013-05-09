@@ -37,7 +37,8 @@
 %%
 -export([start_feed/1, get_feed_genserver_name/1, crash_feed_genserver/1, start_window/6, stop_window/2,
 		 add_data/2, do_add_data/3, subscribe_feed_window/3, do_subscribe_feed_window/2, receive_message/1,
-		 add_searches/3, view_searches/2, remove_searches/3, do_add_searches/3, do_view_searches/2, do_remove_searches/3]).
+		 add_searches/3, view_searches/2, remove_searches/3, do_add_searches/3, do_view_searches/2, 
+		 do_remove_searches/3]).
 
 %%
 %% API Functions
