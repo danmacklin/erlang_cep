@@ -115,18 +115,17 @@ clock_tick(State=#state{queryParameters={NumberOfMatches, WindowSize, time, _Con
 	State#state{position = NewPosition, timingsDict = ResetTimingsDict, matches = ResetMatchList, results = ResetResultsDict}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% @doc	Called from the Genserver to add data to a sized window
-%% 		Runs the row function
-%% 		Mutates the match dictionary
-%% 		Moves to the next position within the sized window
+%% @doc	Called from the Genserver to add data to a sized window runs the row function
+%% 		Mutates the match dictionary moves to the next position within the sized window
 %% 		Mutates the results dictionary.  The results dictionary is created to be the size 
 %% 		of the window.  Every time a new row is added the position is incremented
 %% 		until it equals the size of the window, where it resets to zero, and new rows
 %% 		overwrite the old ones.
 %% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, size, _Consecutive, _MatchType, _ResetStrategy} = QueryParameters}, Joins) ->
-	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [State#state.name, State#state.matches, State#state.position, State#state.parameters, State#state.pidList]),
+do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, size, _Consecutive, _MatchType, _ResetStrategy}}, Joins) ->
+	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", 
+		   [State#state.name, State#state.matches, State#state.position, State#state.parameters, State#state.pidList]),
 		
 	{ok, RowResult} = run_row_query(State#state.parameters, Joins, State#state.jsPort, Row, [], State#state.matches, State#state.rowQuery),
 	?DEBUG("RowResult =  ~p", [RowResult]),
@@ -137,8 +136,8 @@ do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, siz
 	
 	%% Move to next position
 	NewPosition = next_position(State#state.position, WindowSize, size),
-	
-	MutatedMatches = match_engine:do_match(QueryParameters, ResultsDict, NewMatches, State#state.jsPort, State#state.position, State#state.pidList, FirstPassed, State#state.parameters, Joins, State#state.rowQuery, State#state.reduceQuery),
+
+	MutatedMatches = match_engine:do_match(FirstPassed, NewMatches, Joins, ResultsDict, State),
 
 	%% Return the state
   	State#state{position=NewPosition, results=ResultsDict, matches=MutatedMatches};
@@ -146,8 +145,9 @@ do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, siz
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Called by a feed_genserver to add data to a timed window %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, time, _Consecutive, _MatchType, _ResetStrategy} = QueryParameters}, Joins) ->
-	?DEBUG("Do_add_data for time based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [State#state.name, State#state.matches, State#state.position, State#state.parameters, State#state.pidList]),
+do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, time, _Consecutive, _MatchType, _ResetStrategy}}, Joins) ->
+	?DEBUG("Do_add_data for time based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", 
+		   [State#state.name, State#state.matches, State#state.position, State#state.parameters, State#state.pidList]),
 		
 	Now = os:timestamp(),
 	NewSequenceNumber = State#state.sequenceNumber + 1,
@@ -161,8 +161,8 @@ do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, tim
 	{FilteredTimingsDict, FilteredMatchList, FilteredResultsDict} = 
 			expiry_api:expire_from_expiry_dict(NewTimingsDict, State#state.sequenceNumber, NewMatches, ResultsDict, Now, WindowSize),
 		
-	MatchedMatches = match_engine:do_match(QueryParameters, FilteredResultsDict, FilteredMatchList, State#state.jsPort, State#state.sequenceNumber, State#state.pidList, FirstPassed, State#state.parameters, Joins, State#state.rowQuery, State#state.reduceQuery),
-	
+	MatchedMatches = match_engine:do_match(FirstPassed, FilteredMatchList, Joins, FilteredResultsDict, State),
+
 	%% Return the state
   	State#state{results=FilteredResultsDict, matches=MatchedMatches, timingsDict=FilteredTimingsDict, sequenceNumber=NewSequenceNumber}.
 
@@ -181,9 +181,7 @@ process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize
 process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, size, _Consecutive, MatchType, _ResetStrategy}}, _Now, _RowResult) ->
 	{add_match(remove_match(State#state.matches, State#state.position), State#state.position, MatchType), true};
 
-process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, time, Consecutive, _MatchType, _ResetStrategy}}, _Now, []) ->
-	{_NumberOfMatches, _WindowSize, _Time, Consecutive, _MatchType, _ResetStrategy} = State#state.queryParameters,
-	
+process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, time, Consecutive, _MatchType, _ResetStrategy}}, _Now, []) ->	
 	case Consecutive of
 		consecutive ->
 			{[[]], false, State#state.timingsDict};
@@ -192,23 +190,18 @@ process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize
 	end;
 	
 process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, time, _Consecutive, MatchType, _ResetStrategy}}, Now, _RowResult) ->
-	{add_match(State#state.matches, State#state.sequenceNumber, MatchType), true, expiry_api:add_to_expiry_dict(State#state.timingsDict, {State#state.sequenceNumber, Now}, State#state.position)}.
+	{add_match(State#state.matches, State#state.sequenceNumber, MatchType), 
+	 true, 
+	 expiry_api:add_to_expiry_dict(State#state.timingsDict, {State#state.sequenceNumber, Now}, State#state.position)}.
 
 %% @doc Move to the next window position. A window has a fixed size, when we overflow move back to 0.
-next_position(OldPosition, WindowSize, size) when ((WindowSize-1) == OldPosition) ->
-	0;
+next_position(OldPosition, WindowSize, size) when ((WindowSize-1) == OldPosition) -> 0;
 
-next_position(OldPosition, _WindowSize, _) ->
-	OldPosition + 1.
+next_position(OldPosition, _WindowSize, _) -> OldPosition + 1.
 	
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Internal Stuff
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @ doc Import any javascripts within the js directory
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 import_js(JSPort) ->
 	{ok, FileList} = file:list_dir(?get_js()),
 	[import_file(F, JSPort) || F <- FileList].
@@ -216,7 +209,7 @@ import_js(JSPort) ->
 import_file(File, JSPort) ->
 	 ok = js_driver:define_js(JSPort, {file, string:concat(?get_js(), File)}, 5000).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Run the row query passing in an empty second parameter meaning that we are not matching
 %% 		against any other data in the window.
 %%      
@@ -224,18 +217,21 @@ import_file(File, JSPort) ->
 %%	 	nonConsecutive MatchRecognise see 
 %%		match_engine:is_match_recognise(ResultsDict, Position, JSPort, Matches, nonConsecutive, RestartStrategy, Parameters, Joins)
 %% @end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 run_row_query(Parameters, Join, mfa, Data, [], [[]], {RowQueryModule, RowQueryFunction}) ->
-	?DEBUG("Running erlang basic row query empty Matches Parameters:~p Join:~p Data:~p RowQuery:~p", [Parameters, Join, Data, {RowQueryModule, RowQueryFunction}]),
+	?DEBUG("Running erlang basic row query empty Matches Parameters:~p Join:~p Data:~p RowQuery:~p", 
+		   [Parameters, Join, Data, {RowQueryModule, RowQueryFunction}]),
 	{ok, erlang:apply(RowQueryModule, RowQueryFunction, [Parameters, Join, Data, [], 0, true])};
 
 run_row_query(Parameters, Join, mfa, Data, [], Matches, {RowQueryModule, RowQueryFunction}) ->
-	?DEBUG("Running erlang basic row query some Matches Parameters:~p Join:~p Data:~p Matches:~p RowQuery:~p", [Parameters, Join, Data, Matches, {RowQueryModule, RowQueryFunction}]),
+	?DEBUG("Running erlang basic row query some Matches Parameters:~p Join:~p Data:~p Matches:~p RowQuery:~p", 
+		   [Parameters, Join, Data, Matches, {RowQueryModule, RowQueryFunction}]),
 	{ok, erlang:apply(RowQueryModule, RowQueryFunction, [Parameters, Join, Data, [], length(lists:nth(1, Matches)), true])};
 
 %% @doc Run the row query in match select mode (looking against old data)
 run_row_query(Parameters, Join, mfa, Data, PrevData, Matches, {RowQueryModule, RowQueryFunction}) ->
-	?DEBUG("Running erlang select row query Parameters:~p Join:~p Data:~p PrevData:~p RowQuery:~p", [Parameters, Join, Data, PrevData, {RowQueryModule, RowQueryFunction}]),
+	?DEBUG("Running erlang select row query Parameters:~p Join:~p Data:~p PrevData:~p RowQuery:~p", 
+		   [Parameters, Join, Data, PrevData, {RowQueryModule, RowQueryFunction}]),
 	{ok, erlang:apply(RowQueryModule, RowQueryFunction, [Parameters, Join,  Data, PrevData, length(Matches), false])};
 
 run_row_query(Parameters, Join, JSPort, Data, [], [[]], _RowQuery) ->
@@ -348,8 +344,6 @@ create_reduce_function() ->
 							if (sum > 0){
 								return sum / matches.length;
 							}
-
-							
 
 							return 0}">>.
 

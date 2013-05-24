@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% erlang_cep:
+%% erlang_cep: A Complex Event Processing Library in erlang
 %%
 %% Copyright (c) 2013 Daniel Macklin.  All Rights Reserved.
 %%
@@ -26,6 +26,8 @@
 %% Include files
 %%
 
+-include("window.hrl").
+
 -ifdef(TEST).
 	-include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -33,60 +35,41 @@
 %%
 %% Exported Functions
 %%
--export([do_match/11, run_reduce_function/7]).
+-export([do_match/5, run_reduce_function/7]).
 
 %%
 %% API Functions Note this only gets called after an initial first pass match.
 %%
 
-do_match(_QueryParameters, _ResultsDict, Matches, _JSPort, _Position, _PidList, false, _Parameters, _Joins, _RowQuery, _ReduceQuery) ->
+do_match(false, Matches, _Joins, _ResultsDict, _State) ->
 	Matches;
 
 %% If the Number of Matches = 0 then don't perform matches.
-do_match({0, _WindowSize, _WindowType, _Consecutive, _MatchType, _RestartStrategy} = _QueryParameters, 
-		 _ResultsDict, Matches, _JSPort, _Position, _PidList, _First, _Parameters, _Joins, _RowQuery, _ReduceQuery) ->
+do_match(_First, Matches, _Joins, _ResultsDict, _State=#state{queryParameters = {0, _WindowSize, _WindowType, _Consecutive, _MatchType, _RestartStrategy}}) ->
 	Matches;
 
-do_match({NumberOfMatches, WindowSize, WindowType, Consecutive, MatchType, RestartStrategy} = _QueryParameters, 
-		 ResultsDict, Matches, JSPort, Position, PidList, true, Parameters, Joins, RowQuery, ReduceQuery) ->
+do_match(true, Matches, Joins, ResultsDict, State) ->
+	{NumberOfMatches, WindowSize, WindowType, Consecutive, MatchType, RestartStrategy} = State#state.queryParameters,
 
 	case MatchType of 
 		matchRecognise ->
-			MutatedMatchList = is_match_recognise(ResultsDict, Position, JSPort, Matches, Consecutive, RestartStrategy, Parameters, Joins, RowQuery),
-			run_reduce_function(PidList, MutatedMatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy, ReduceQuery);
+			MutatedMatchList = is_match_recognise(ResultsDict, State#state.position, State#state.jsPort, Matches, Consecutive, RestartStrategy, State#state.parameters, Joins, State#state.rowQuery),
+			run_reduce_function(State#state.pidList, MutatedMatchList, NumberOfMatches, ResultsDict, State#state.jsPort, RestartStrategy, State#state.reduceQuery);
 		standard ->
 			MutatedMatchList = is_match(Matches, NumberOfMatches, WindowSize, Consecutive, WindowType),
-			run_reduce_function(PidList, MutatedMatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy, ReduceQuery);
+			run_reduce_function(State#state.pidList, MutatedMatchList, NumberOfMatches, ResultsDict, State#state.jsPort, RestartStrategy, State#state.reduceQuery);
 		every ->
 			%% Do not need to run a reduce function for an every window.  Run on the window roll-over
 			Matches
 	end.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Internal stuff
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 run_reduce_function(_PidList, [], _NumberOfMatches, _ResultsDict, _JSPort, _RestartStrategy, _ReduceQuery) ->
 	[[]];
 
 run_reduce_function(PidList, MatchList, NumberOfMatches, ResultsDict, JSPort, RestartStrategy, ReduceQuery) ->
-	Res = lists:foldl(fun(Matches, Acc) ->
-						case length(Matches) >= NumberOfMatches of
-							true ->
-								{ok, ReduceResults} = window_api:run_reduce_query(JSPort, [extract_results(Matches, ResultsDict)], ReduceQuery),
-								bang_processes(PidList, ReduceResults),
-								
-								case RestartStrategy of
-									restart ->
-										Acc;
-									noRestart ->
-										Acc ++ [Matches]
-								end;
-							false ->
-								Acc ++ [Matches]
-						end
-						  
-				  end,[], MatchList),
+	Res = lists:reverse(lists:foldl(fun(Matches, Acc) -> 
+											handle_reduce(Matches, Acc, NumberOfMatches, ResultsDict, ReduceQuery, JSPort, PidList, RestartStrategy)
+									end,[], MatchList)),
 	case Res of
 		[] ->
 			[[]];
@@ -94,6 +77,20 @@ run_reduce_function(PidList, MatchList, NumberOfMatches, ResultsDict, JSPort, Re
 			Res
 	end.
 
+handle_reduce(Matches, Acc, NumberOfMatches, ResultsDict, ReduceQuery, JSPort, PidList, RestartStrategy) when length(Matches) >= NumberOfMatches ->
+	{ok, ReduceResults} = window_api:run_reduce_query(JSPort, [extract_results(Matches, ResultsDict)], ReduceQuery),
+	bang_processes(PidList, ReduceResults),
+								
+	case RestartStrategy of
+		restart ->
+			Acc;
+		noRestart ->
+		   [Matches] ++ Acc
+	end;
+
+handle_reduce(Matches, Acc, _NumberOfMatches, _ResultsDict, _ReduceQuery, _JSPort, _PidList, _RestartStrategy) ->
+	[Matches] ++ Acc.
+	
 %% @doc Bang a message to the processes that have registered an interest in this window
 bang_processes(ProcessList, Results) ->
 	lists:foreach(fun(Pid) ->
