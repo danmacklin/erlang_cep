@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% erlang_cep:
+%% erlang_cep: A Complex Event Processing Library written in erlang
 %%
 %% Copyright (c) 2013 Daniel Macklin.  All Rights Reserved.
 %%
@@ -95,31 +95,22 @@ add_data(Data, Pid) ->
 %%  	Expire the entirity of the oldList in the last second as all elements should now be expired.
 %%	@end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-clock_tick(State=#state{results=ResultsDict,
-						matches=MatchList,
-						position=Position,
-						queryParameters={NumberOfMatches, WindowSize, time, _Consecutive, MatchType, ResetStrategy},
-						jsPort=JSPort,
-						pidList = PidList,
-						timingsDict = TimingsDict,
-						name = Name,
-						reduceQuery = ReduceQuery}) ->
-	
-	?DEBUG("Ticking clock for Name:~p Position:~p Matches:~p PidList:~p", [Name, Position, MatchList, PidList]),
+clock_tick(State=#state{queryParameters={NumberOfMatches, WindowSize, time, _Consecutive, MatchType, ResetStrategy}}) ->
+	?DEBUG("Ticking clock for Name:~p Position:~p Matches:~p PidList:~p", [State#state.name, State#state.position, State#state.matches, State#state.pidList]),
 	
 	%% Not the cleanest code in the world.  New Position stores the second within the window.
     %% This needs to roll around hence passing in the size parameter.
-	NewPosition = next_position(Position, WindowSize, size),
+	NewPosition = next_position(State#state.position, WindowSize, size),
 	
 	MutatedMatchList = case NewPosition of
 							0 when MatchType == every ->
-								match_engine:run_reduce_function(PidList, MatchList, NumberOfMatches, ResultsDict, JSPort, ResetStrategy, ReduceQuery);
+								match_engine:run_reduce_function(State#state.pidList, State#state.matches, NumberOfMatches, State#state.results, State#state.jsPort, ResetStrategy, State#state.reduceQuery);
 							_ ->
-								MatchList
+								State#state.matches
 						end,
 		
 	{ResetTimingsDict, ResetMatchList, ResetResultsDict} = 
-			expiry_api:expiry_list_reset_old(expiry_api:expiry_list_swap(TimingsDict, NewPosition), Position, MutatedMatchList, ResultsDict),
+			expiry_api:expiry_list_reset_old(expiry_api:expiry_list_swap(State#state.timingsDict, NewPosition), State#state.position, MutatedMatchList, State#state.results),
 	
 	State#state{position = NewPosition, timingsDict = ResetTimingsDict, matches = ResetMatchList, results = ResetResultsDict}.
 
@@ -134,90 +125,74 @@ clock_tick(State=#state{results=ResultsDict,
 %% 		overwrite the old ones.
 %% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-do_add_data(Row, State=#state{results=Results, 
-							  matches=Matches, 
-							  position=Position, 
-							  queryParameters={_NumberOfMatches, WindowSize, size, Consecutive, MatchType, _ResetStrategy} = QueryParameters,
-							  jsPort=JSPort,
-							  parameters = Parameters,
-							  pidList=PidList,
-							  name = Name,
-							  rowQuery = RowQuery,
-							  reduceQuery = ReduceQuery}, Joins) ->
-	
-	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
+do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, size, _Consecutive, _MatchType, _ResetStrategy} = QueryParameters}, Joins) ->
+	?DEBUG("Do_add_data for size based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [State#state.name, State#state.matches, State#state.position, State#state.parameters, State#state.pidList]),
 		
-	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches, RowQuery),
+	{ok, RowResult} = run_row_query(State#state.parameters, Joins, State#state.jsPort, Row, [], State#state.matches, State#state.rowQuery),
 	?DEBUG("RowResult =  ~p", [RowResult]),
 		
-	{NewMatches, FirstPassed} = case RowResult of 
-					[] ->
-						%% If consecutive then a fail will clear all state otherwise take the old position out of all of the match lists
-						case Consecutive of
-							consecutive ->
-								{[[]], false};
-							nonConsecutive ->
-								{remove_match(Matches, Position), false}
-						end;
-					_ ->
-						{add_match(remove_match(Matches, Position), Position, MatchType), true}
-				end,
+	{NewMatches, FirstPassed} = process_row_result(State, empty, RowResult),
 	
-	ResultsDict = add_to_results_dictionary(Results, Row, RowResult, Position),
+	ResultsDict = add_to_results_dictionary(State#state.results, Row, RowResult, State#state.position),
 	
 	%% Move to next position
-	NewPosition = next_position(Position, WindowSize, size),
+	NewPosition = next_position(State#state.position, WindowSize, size),
 	
-	MutatedMatches = match_engine:do_match(QueryParameters, ResultsDict, NewMatches, JSPort, Position, PidList, FirstPassed, Parameters, Joins, RowQuery, ReduceQuery),
+	MutatedMatches = match_engine:do_match(QueryParameters, ResultsDict, NewMatches, State#state.jsPort, State#state.position, State#state.pidList, FirstPassed, State#state.parameters, Joins, State#state.rowQuery, State#state.reduceQuery),
 
 	%% Return the state
-  	State#state{position = NewPosition, results = ResultsDict, matches = MutatedMatches};
+  	State#state{position=NewPosition, results=ResultsDict, matches=MutatedMatches};
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Called by a feed_genserver to add data to a timed window %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-do_add_data(Row, State=#state{results=Results, 
-							  matches=Matches, 
-							  position=Position, 
-							  queryParameters={_NumberOfMatches, WindowSize, time, Consecutive, MatchType, _ResetStrategy} = QueryParameters,
-							  jsPort=JSPort,
-							  pidList=PidList,
-							  sequenceNumber=SequenceNumber,
-							  parameters=Parameters,
-							  timingsDict=TimingsDict,
-							  name=Name,
-							  rowQuery = RowQuery,
-							  reduceQuery = ReduceQuery}, Joins) ->
-	
-	?DEBUG("Do_add_data for time based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [Name, Matches, Position, Parameters, PidList]),
+do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, time, _Consecutive, _MatchType, _ResetStrategy} = QueryParameters}, Joins) ->
+	?DEBUG("Do_add_data for time based window Name: ~p Matches:~p Position:~p Parameters:~p PidList:~p", [State#state.name, State#state.matches, State#state.position, State#state.parameters, State#state.pidList]),
 		
 	Now = os:timestamp(),
-	NewSequenceNumber = SequenceNumber + 1,
+	NewSequenceNumber = State#state.sequenceNumber + 1,
 	
-	{ok, RowResult} = run_row_query(Parameters, Joins, JSPort, Row, [], Matches, RowQuery),
+	{ok, RowResult} = run_row_query(State#state.parameters, Joins, State#state.jsPort, Row, [], State#state.matches, State#state.rowQuery),
 			
-	{NewMatches, FirstPassed, NewTimingsDict} = case RowResult of 
-					[] ->
-						%% If consecutive then a fail will clear all state otherwise take the old position out of all of the match lists
-						case Consecutive of
-							consecutive ->
-								{[[]], false, TimingsDict};
-							nonConsecutive ->
-								{Matches, false, TimingsDict}
-						end;
-					_ ->
-						{add_match(Matches, SequenceNumber, MatchType), true, expiry_api:add_to_expiry_dict(TimingsDict, {SequenceNumber, Now}, Position)}
-				end,
+	{NewMatches, FirstPassed, NewTimingsDict} = process_row_result(State, Now, RowResult),
 
-	ResultsDict = add_to_results_dictionary(Results, Row, RowResult, SequenceNumber),
+	ResultsDict = add_to_results_dictionary(State#state.results, Row, RowResult, State#state.sequenceNumber),
 	
 	{FilteredTimingsDict, FilteredMatchList, FilteredResultsDict} = 
-			expiry_api:expire_from_expiry_dict(NewTimingsDict, SequenceNumber, NewMatches, ResultsDict, Now, WindowSize),
+			expiry_api:expire_from_expiry_dict(NewTimingsDict, State#state.sequenceNumber, NewMatches, ResultsDict, Now, WindowSize),
 		
-	MatchedMatches = match_engine:do_match(QueryParameters, FilteredResultsDict, FilteredMatchList, JSPort, SequenceNumber, PidList, FirstPassed, Parameters, Joins, RowQuery, ReduceQuery),
+	MatchedMatches = match_engine:do_match(QueryParameters, FilteredResultsDict, FilteredMatchList, State#state.jsPort, State#state.sequenceNumber, State#state.pidList, FirstPassed, State#state.parameters, Joins, State#state.rowQuery, State#state.reduceQuery),
 	
 	%% Return the state
-  	State#state{results = FilteredResultsDict, matches = MatchedMatches, timingsDict=FilteredTimingsDict, sequenceNumber = NewSequenceNumber}.
+  	State#state{results=FilteredResultsDict, matches=MatchedMatches, timingsDict=FilteredTimingsDict, sequenceNumber=NewSequenceNumber}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @doc Process the results of the Row Query - When a row query runs it returns a dictionary containing the results.  Given the %% 
+%%      results we have to mutate the match list 																  				%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, size, Consecutive, _MatchType, _ResetStrategy}}, _Now, []) ->
+		case Consecutive of
+			consecutive ->
+				{[[]], false};
+			nonConsecutive ->
+				{remove_match(State#state.matches, State#state.position), false}
+		end;
+
+process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, size, _Consecutive, MatchType, _ResetStrategy}}, _Now, _RowResult) ->
+	{add_match(remove_match(State#state.matches, State#state.position), State#state.position, MatchType), true};
+
+process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, time, Consecutive, _MatchType, _ResetStrategy}}, _Now, []) ->
+	{_NumberOfMatches, _WindowSize, _Time, Consecutive, _MatchType, _ResetStrategy} = State#state.queryParameters,
+	
+	case Consecutive of
+		consecutive ->
+			{[[]], false, State#state.timingsDict};
+		nonConsecutive ->
+			{State#state.matches, false, State#state.timingsDict}
+	end;
+	
+process_row_result(State=#state{queryParameters = {_NumberOfMatches, _WindowSize, time, _Consecutive, MatchType, _ResetStrategy}}, Now, _RowResult) ->
+	{add_match(State#state.matches, State#state.sequenceNumber, MatchType), true, expiry_api:add_to_expiry_dict(State#state.timingsDict, {State#state.sequenceNumber, Now}, State#state.position)}.
 
 %% @doc Move to the next window position. A window has a fixed size, when we overflow move back to 0.
 next_position(OldPosition, WindowSize, size) when ((WindowSize-1) == OldPosition) ->
