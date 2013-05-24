@@ -137,7 +137,7 @@ do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, siz
 	%% Move to next position
 	NewPosition = next_position(State#state.position, WindowSize, size),
 
-	MutatedMatches = match_engine:do_match(FirstPassed, NewMatches, Joins, ResultsDict, State),
+	MutatedMatches = match_engine:do_match(FirstPassed, NewMatches, Joins, ResultsDict, State, State#state.position),
 
 	%% Return the state
   	State#state{position=NewPosition, results=ResultsDict, matches=MutatedMatches};
@@ -161,7 +161,7 @@ do_add_data(Row, State=#state{queryParameters={_NumberOfMatches, WindowSize, tim
 	{FilteredTimingsDict, FilteredMatchList, FilteredResultsDict} = 
 			expiry_api:expire_from_expiry_dict(NewTimingsDict, State#state.sequenceNumber, NewMatches, ResultsDict, Now, WindowSize),
 		
-	MatchedMatches = match_engine:do_match(FirstPassed, FilteredMatchList, Joins, FilteredResultsDict, State),
+	MatchedMatches = match_engine:do_match(FirstPassed, FilteredMatchList, Joins, FilteredResultsDict, State, State#state.sequenceNumber),
 
 	%% Return the state
   	State#state{results=FilteredResultsDict, matches=MatchedMatches, timingsDict=FilteredTimingsDict, sequenceNumber=NewSequenceNumber}.

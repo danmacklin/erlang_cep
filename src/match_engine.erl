@@ -35,25 +35,25 @@
 %%
 %% Exported Functions
 %%
--export([do_match/5, run_reduce_function/7]).
+-export([do_match/6, run_reduce_function/7]).
 
 %%
 %% API Functions Note this only gets called after an initial first pass match.
 %%
 
-do_match(false, Matches, _Joins, _ResultsDict, _State) ->
+do_match(false, Matches, _Joins, _ResultsDict, _State, _Position) ->
 	Matches;
 
 %% If the Number of Matches = 0 then don't perform matches.
-do_match(_First, Matches, _Joins, _ResultsDict, _State=#state{queryParameters = {0, _WindowSize, _WindowType, _Consecutive, _MatchType, _RestartStrategy}}) ->
+do_match(_First, Matches, _Joins, _ResultsDict, _State=#state{queryParameters = {0, _WindowSize, _WindowType, _Consecutive, _MatchType, _RestartStrategy}}, _Position) ->
 	Matches;
 
-do_match(true, Matches, Joins, ResultsDict, State) ->
+do_match(true, Matches, Joins, ResultsDict, State, Position) ->
 	{NumberOfMatches, WindowSize, WindowType, Consecutive, MatchType, RestartStrategy} = State#state.queryParameters,
 
 	case MatchType of 
 		matchRecognise ->
-			MutatedMatchList = is_match_recognise(ResultsDict, State#state.position, State#state.jsPort, Matches, Consecutive, RestartStrategy, State#state.parameters, Joins, State#state.rowQuery),
+			MutatedMatchList = is_match_recognise(ResultsDict, Position, State#state.jsPort, Matches, Consecutive, RestartStrategy, State#state.parameters, Joins, State#state.rowQuery),
 			run_reduce_function(State#state.pidList, MutatedMatchList, NumberOfMatches, ResultsDict, State#state.jsPort, RestartStrategy, State#state.reduceQuery);
 		standard ->
 			MutatedMatchList = is_match(Matches, NumberOfMatches, WindowSize, Consecutive, WindowType),
